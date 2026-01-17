@@ -1,5 +1,8 @@
 import re
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
+
+import tkinter as tk
+from tkinter import filedialog
 
 import pdfplumber
 import pandas as pd
@@ -9,6 +12,15 @@ import camelot
 
 
 HEADER_TEXT = "DETAILED CREDIT REPORT (BANKING ACCOUNTS)"
+TARGET_FACILITIES = [
+    "OVRDRAFT",
+    "TEMPOVDT",
+    "RVVGCRDT",
+    "INVOIFIN",
+    "TRECEIPT",
+    "BAOWNPCH",
+    "BAOWNEXP",
+]
 
 
 def find_first_table_page(pdf_path: str, needle: str = HEADER_TEXT) -> Optional[int]:
@@ -85,12 +97,105 @@ def extract_first_detailed_credit_table(
     raise ValueError("No valid table found on the header page (try table_regions or different flavor).")
 
 
+def pick_pdf_file() -> Optional[str]:
+    """Open a file picker to select a PDF."""
+    root = tk.Tk()
+    root.withdraw()
+    root.update()
+
+    file_path = filedialog.askopenfilename(
+        title="Select Experian PDF",
+        filetypes=[("PDF files", "*.pdf")],
+    )
+
+    root.destroy()
+    return file_path if file_path else None
+
+
+def _normalize_facility(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", value.upper())
+
+
+def _parse_amount(value: str) -> Optional[float]:
+    cleaned = re.sub(r"[,\s]", "", value)
+    if cleaned in {"", "-", "N/A"}:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _find_header_row(df: pd.DataFrame) -> Optional[int]:
+    for idx in range(len(df)):
+        row_text = " ".join(df.iloc[idx].astype(str).fillna("").tolist()).upper()
+        if "FACILITY" in row_text and ("LIMIT" in row_text or "OUTSTANDING" in row_text):
+            return idx
+    return None
+
+
+def _find_column_index(header_row: pd.Series, keyword: str) -> Optional[int]:
+    for idx, value in enumerate(header_row.astype(str).fillna("").tolist()):
+        if keyword in value.upper():
+            return idx
+    return None
+
+
+def evaluate_facility_limits(df: pd.DataFrame) -> Dict[str, str]:
+    header_row_index = _find_header_row(df)
+    if header_row_index is None:
+        return {facility: "N/A" for facility in TARGET_FACILITIES}
+
+    header_row = df.iloc[header_row_index]
+    facility_idx = _find_column_index(header_row, "FACILITY")
+    limit_idx = _find_column_index(header_row, "LIMIT")
+    outstanding_idx = _find_column_index(header_row, "OUTSTANDING")
+
+    if facility_idx is None or limit_idx is None or outstanding_idx is None:
+        return {facility: "N/A" for facility in TARGET_FACILITIES}
+
+    normalized_targets = {facility: _normalize_facility(facility) for facility in TARGET_FACILITIES}
+    status_map: Dict[str, List[str]] = {facility: [] for facility in TARGET_FACILITIES}
+
+    for row_idx in range(header_row_index + 1, len(df)):
+        row = df.iloc[row_idx]
+        facility_raw = str(row.iloc[facility_idx]).strip()
+        if not facility_raw:
+            continue
+        normalized_facility = _normalize_facility(facility_raw)
+        for facility, normalized_target in normalized_targets.items():
+            if normalized_facility == normalized_target:
+                limit_value = _parse_amount(str(row.iloc[limit_idx]))
+                outstanding_value = _parse_amount(str(row.iloc[outstanding_idx]))
+                if limit_value is None or outstanding_value is None:
+                    continue
+                status_map[facility].append("Yes" if outstanding_value <= limit_value else "No")
+
+    results = {}
+    for facility, statuses in status_map.items():
+        if not statuses:
+            results[facility] = "N/A"
+        elif "No" in statuses:
+            results[facility] = "No"
+        else:
+            results[facility] = "Yes"
+    return results
+
+
 if __name__ == "__main__":
-    pdf_path = "/mnt/data/ZATIKIMIA SDN.  BHD._Experian_251215.pdf"
+    pdf_path = pick_pdf_file()
+    if not pdf_path:
+        print("No PDF selected. Exit.")
+        raise SystemExit(0)
 
     df, page_no = extract_first_detailed_credit_table(pdf_path)
     print(f"Extracted FIRST DETAILED CREDIT REPORT table from page {page_no}")
     print(df)
+
+    facility_results = evaluate_facility_limits(df)
+    print("Facility Limit Check (Outstanding <= Limit):")
+    for facility, status in facility_results.items():
+        print(f"  {facility}: {status}")
 
     # Optional: Save output
     df.to_csv("detailed_credit_report_first_table.csv", index=False)
