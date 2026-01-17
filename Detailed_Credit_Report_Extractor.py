@@ -9,6 +9,7 @@ import pandas as pd
 
 # Camelot requires: pip install camelot-py[cv]
 import camelot
+from pypdf.errors import PdfReadError, PdfStreamError
 
 
 HEADER_TEXT = "DETAILED CREDIT REPORT (BANKING ACCOUNTS)"
@@ -69,23 +70,29 @@ def extract_first_detailed_credit_table(
     # Camelot uses 1-based page indexing in string form
     pages_str = str(page_no)
 
-    tables = camelot.read_pdf(
-        pdf_path,
-        pages=pages_str,
-        flavor=flavor,
-        table_regions=table_regions,  # optional; helps if extraction is messy
-        strip_text="\n",
-    )
-
-    if tables.n == 0:
-        # fallback: try stream (works for whitespace-separated tables)
+    try:
         tables = camelot.read_pdf(
             pdf_path,
             pages=pages_str,
-            flavor="stream",
-            table_regions=table_regions,
+            flavor=flavor,
+            table_regions=table_regions,  # optional; helps if extraction is messy
             strip_text="\n",
         )
+    except (PdfReadError, PdfStreamError, OSError) as exc:
+        raise ValueError(f"Failed to read PDF with Camelot: {exc}") from exc
+
+    if tables.n == 0:
+        # fallback: try stream (works for whitespace-separated tables)
+        try:
+            tables = camelot.read_pdf(
+                pdf_path,
+                pages=pages_str,
+                flavor="stream",
+                table_regions=table_regions,
+                strip_text="\n",
+            )
+        except (PdfReadError, PdfStreamError, OSError) as exc:
+            raise ValueError(f"Failed to read PDF with Camelot: {exc}") from exc
 
     for t in tables:
         df = t.df
@@ -110,6 +117,15 @@ def pick_pdf_file() -> Optional[str]:
 
     root.destroy()
     return file_path if file_path else None
+
+
+def validate_pdf_file(pdf_path: str) -> None:
+    """Raise ValueError if the file is not a readable PDF."""
+    try:
+        with pdfplumber.open(pdf_path):
+            return
+    except Exception as exc:
+        raise ValueError(f"Selected file is not a readable PDF: {exc}") from exc
 
 
 def _normalize_facility(value: str) -> str:
@@ -188,6 +204,7 @@ if __name__ == "__main__":
         print("No PDF selected. Exit.")
         raise SystemExit(0)
 
+    validate_pdf_file(pdf_path)
     df, page_no = extract_first_detailed_credit_table(pdf_path)
     print(f"Extracted FIRST DETAILED CREDIT REPORT table from page {page_no}")
     print(df)
