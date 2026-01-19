@@ -196,8 +196,6 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                 }
             )
 
-    total_amount = sum(totals.values(), Decimal("0"))
-    totals_float = {key: float(value) for key, value in totals.items()}
     totals_by_record_no_float = {str(key): float(value) for key, value in totals_by_record_no.items()}
     amounts_by_record_no_float = {
         str(key): {
@@ -209,9 +207,15 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     return {
         "matched_lines": results,
         "amount_totals": {
-            "by_account_type": totals_float,
             "by_record_no": totals_by_record_no_float,
-            "overall": float(total_amount),
+        },
+        "amounts_by_record_no": amounts_by_record_no_float,
+        "digit_counts_totals": {
+            "next_five_numbers_digit_counts_0_1_2_3_5_plus": next_five_digit_totals
+        },
+        "amounts_by_record_no": amounts_by_record_no_float,
+        "digit_counts_totals": {
+            "next_five_numbers_digit_counts_0_1_2_3_5_plus": next_five_digit_totals
         },
         "amounts_by_record_no": amounts_by_record_no_float,
         "next_six_numbers_digit_counts_0_1_2_3_5_plus_total": next_six_digit_totals,
@@ -224,11 +228,11 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
 
 def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
     pattern_outstanding = re.compile(
-        r"TOTAL\s+OUTSTANDING\s+BALANCE\s*:\s*([0-9,]+(?:\.\d{2})?)",
+        r"OUTSTANDING\s*([0-9,]+(?:\.\d{2})?)",
         re.IGNORECASE,
     )
     pattern_limit = re.compile(
-        r"TOTAL\s+LIMIT\s*:\s*([0-9,]+(?:\.\d{2})?)",
+        r"LIMIT\s*:\s*([0-9,]+(?:\.\d{2})?)",
         re.IGNORECASE,
     )
     chunks: List[str] = []
