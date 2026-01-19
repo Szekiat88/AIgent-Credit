@@ -8,6 +8,8 @@ from tkinter import filedialog
 
 import pdfplumber
 
+RE_MONEY = re.compile(r"\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b")
+
 
 def _norm(s: str) -> str:
     """Normalize whitespace to make regex easier."""
@@ -71,6 +73,12 @@ def extract_word_after_label(label: str, text: str) -> Optional[str]:
     return v.split("\n")[0].strip()
 
 
+def parse_money(value: str) -> Optional[float]:
+    if not value:
+        return None
+    return float(value.replace(",", ""))
+
+
 def extract_iscore(text: str) -> Optional[int]:
     """
     Match:
@@ -94,12 +102,46 @@ def extract_legal_suits_total(text: str) -> Optional[int]:
     return int(v2) if v2 else None
 
 
+def extract_section_after_header(header: str, text: str) -> Optional[str]:
+    header_esc = re.escape(header)
+    pattern = rf"{header_esc}.*?(?=\n[A-Z][A-Z &/\-]{{5,}}\n|$)"
+    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+    return match.group(0) if match else None
+
+
+def extract_borrower_liabilities(text: str) -> tuple[Optional[float], Optional[float]]:
+    section = extract_section_after_header("SUMMARY OF POTENTIAL & CURRENT LIABILITIES", text)
+    if not section:
+        return None, None
+
+    lines = [line.strip() for line in section.splitlines() if line.strip()]
+    header_idx = next(
+        (idx for idx, line in enumerate(lines) if "Outstanding" in line and "Total Limit" in line),
+        None,
+    )
+    if header_idx is None:
+        search_lines = lines
+    else:
+        search_lines = lines[header_idx + 1 :]
+
+    for idx, line in enumerate(search_lines):
+        if re.search(r"\bBorrower\b", line, re.IGNORECASE):
+            combined = line
+            if idx + 1 < len(search_lines):
+                combined = f"{combined} {search_lines[idx + 1]}"
+            amounts = [m.group(0) for m in RE_MONEY.finditer(combined)]
+            if len(amounts) >= 2:
+                return parse_money(amounts[0]), parse_money(amounts[1])
+    return None, None
+
+
 def extract_fields(pdf_path: str) -> dict:
     """Extract required fields from PDF."""
     text = read_pdf_text(pdf_path)
 
     incorporation_date = extract_date_after_label("Incorporation Date", text)
     incorporation_year = int(incorporation_date[-4:]) if incorporation_date else None
+    borrower_outstanding, borrower_total_limit = extract_borrower_liabilities(text)
 
     return {
         "pdf_file": pdf_path,
@@ -117,8 +159,14 @@ def extract_fields(pdf_path: str) -> dict:
         "Existing_No_of_Facility_from_Banking": extract_int_after_label(
             "Existing No. of Facility (from Banking)", text
         ),
+        "Total_Enquiries_Last_12_months": extract_int_after_label(
+            "Total Enquiries for Last 12 months", text
+        ),
+        "Special_Attention_Account": extract_int_after_label("Special Attention Account", text),
 
         "Legal_Suits": extract_legal_suits_total(text),
+        "Borrower_Outstanding_RM": borrower_outstanding,
+        "Borrower_Total_Limit_RM": borrower_total_limit,
     }
 
 
