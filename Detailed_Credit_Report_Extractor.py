@@ -170,10 +170,11 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
 
             term_details = _extract_term_details(line)
             if term_details:
+                next_five_counts = term_details.get(
+                    "next_five_numbers_digit_counts_0_1_2_3_5_plus", {}
+                )
                 for key in next_five_digit_totals:
-                    next_five_digit_totals[key] += term_details[
-                        "next_five_numbers_digit_counts_0_1_2_3_5_plus"
-                    ].get(key, 0)
+                    next_five_digit_totals[key] += next_five_counts.get(key, 0)
             results.append(
                 {
                     "record_no": record.no,
@@ -198,6 +199,10 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
         "matched_lines": results,
         "amount_totals": {
             "by_record_no": totals_by_record_no_float,
+        },
+        "amounts_by_record_no": amounts_by_record_no_float,
+        "digit_counts_totals": {
+            "next_five_numbers_digit_counts_0_1_2_3_5_plus": next_five_digit_totals
         },
         "amounts_by_record_no": amounts_by_record_no_float,
         "digit_counts_totals": {
