@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, asdict
+from decimal import Decimal, InvalidOperation
 
 import pdfplumber
 
@@ -38,6 +39,18 @@ RE_RECORD_START = re.compile(r"^\s*(\d{1,4})\s+")
 RE_DATE = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
 RE_MONEY = re.compile(r"\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b")
 RE_TERM = re.compile(r"\b(MTH|BUL|REV|IDF|IRR)\b")
+RE_DIGIT_TOKEN = re.compile(r"^\d+$")
+
+ACCOUNT_KEYWORDS = (
+    "OVRDRAFT",
+    "TEMPOVDT",
+    "RVVGCRDT",
+    "INVOIFIN",
+    "TRECEIPT",
+    "BAOWNPCH",
+    "BAOWNEXP",
+    "CRDTCARD",
+)
 
 
 # =============================
@@ -48,6 +61,113 @@ class BankingAccountRecord:
     no: int
     raw_lines: List[str]
     raw_text: str
+
+
+def _parse_decimal(value: str) -> Optional[Decimal]:
+    try:
+        return Decimal(value.replace(",", ""))
+    except (InvalidOperation, AttributeError):
+        return None
+
+
+def _extract_amount_before_date(line: str) -> Optional[Decimal]:
+    date_match = RE_DATE.search(line)
+    if not date_match:
+        return None
+    before_date = line[: date_match.start()]
+    money_matches = list(RE_MONEY.finditer(before_date))
+    if not money_matches:
+        return None
+    return _parse_decimal(money_matches[-1].group(0))
+
+
+def _digit_counts(value: str) -> Dict[str, int]:
+    counts = {str(d): 0 for d in range(5)}
+    for ch in value:
+        if ch in counts:
+            counts[ch] += 1
+    return counts
+
+
+def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
+    match = RE_TERM.search(line)
+    if not match:
+        return None
+    term = match.group(1)
+    rest = line[match.end() :].strip()
+    tokens = rest.split()
+    runs: List[Dict[str, int]] = []
+    current_start = None
+    current_end = None
+    for idx, token in enumerate(tokens):
+        if RE_DIGIT_TOKEN.match(token):
+            if current_start is None:
+                current_start = idx
+            current_end = idx
+        else:
+            if current_start is not None:
+                runs.append({"start": current_start, "end": current_end})
+                current_start = None
+                current_end = None
+    if current_start is not None:
+        runs.append({"start": current_start, "end": current_end})
+
+    numeric_tokens: List[str] = []
+    trailing_words = ""
+    if runs:
+        last_run = runs[-1]
+        numeric_tokens = tokens[last_run["start"] : last_run["end"] + 1]
+        trailing_words = " ".join(tokens[last_run["end"] + 1 :]).strip()
+    first_number = numeric_tokens[0] if numeric_tokens else None
+    next_five_numbers = numeric_tokens[1:6] if len(numeric_tokens) > 1 else []
+    next_five_joined = "".join(next_five_numbers)
+
+    return {
+        "term": term,
+        "numeric_sequence": numeric_tokens,
+        "first_number": first_number,
+        "first_number_digit_counts_0_to_4": _digit_counts(first_number or ""),
+        "next_five_numbers": next_five_numbers,
+        "next_five_numbers_digit_counts_0_to_4": _digit_counts(next_five_joined),
+        "trailing_words": trailing_words,
+    }
+
+
+def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]:
+    results: List[Dict[str, Any]] = []
+    totals: Dict[str, Decimal] = {}
+
+    for record in records:
+        for line in record.raw_lines:
+            matched_keyword = next((kw for kw in ACCOUNT_KEYWORDS if kw in line), None)
+            if not matched_keyword:
+                continue
+            amount_before_date = _extract_amount_before_date(line)
+            if amount_before_date is not None:
+                totals[matched_keyword] = totals.get(matched_keyword, Decimal("0")) + amount_before_date
+
+            term_details = _extract_term_details(line)
+            results.append(
+                {
+                    "record_no": record.no,
+                    "account_type": matched_keyword,
+                    "raw_line": line,
+                    "amount_before_date": (
+                        float(amount_before_date) if amount_before_date is not None else None
+                    ),
+                    "term_details": term_details,
+                }
+            )
+
+    total_amount = sum(totals.values(), Decimal("0"))
+    totals_float = {key: float(value) for key, value in totals.items()}
+    return {
+        "matched_lines": results,
+        "amount_totals": {
+            "by_account_type": totals_float,
+            "overall": float(total_amount),
+        },
+    }
 
 
 # =============================
@@ -135,6 +255,7 @@ def main():
         },
         "total_records": len(records),
         "records": [asdict(r) for r in records],
+        "account_line_analysis": analyze_account_lines(records),
     }
 
     out_file = "detailed_credit_report_banking_accounts.json"
