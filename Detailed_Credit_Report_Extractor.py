@@ -82,10 +82,12 @@ def _extract_amount_before_date(line: str) -> Optional[Decimal]:
 
 
 def _digit_counts(value: str) -> Dict[str, int]:
-    counts = {str(d): 0 for d in range(5)}
+    counts = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     for ch in value:
-        if ch in counts:
+        if ch in {"0", "1", "2", "3"}:
             counts[ch] += 1
+        elif ch.isdigit() and ch >= "5":
+            counts["5_plus"] += 1
     return counts
 
 
@@ -118,17 +120,18 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
         last_run = runs[-1]
         numeric_tokens = tokens[last_run["start"] : last_run["end"] + 1]
         trailing_words = " ".join(tokens[last_run["end"] + 1 :]).strip()
-    first_number = numeric_tokens[0] if numeric_tokens else None
-    next_five_numbers = numeric_tokens[1:6] if len(numeric_tokens) > 1 else []
+    first_six_numbers = numeric_tokens[:6]
+    first_number = first_six_numbers[0] if first_six_numbers else None
+    next_five_numbers = first_six_numbers[1:6] if len(first_six_numbers) > 1 else []
     next_five_joined = "".join(next_five_numbers)
 
     return {
         "term": term,
-        "numeric_sequence": numeric_tokens,
+        "numeric_sequence": first_six_numbers,
         "first_number": first_number,
-        "first_number_digit_counts_0_to_4": _digit_counts(first_number or ""),
+        "first_number_digit_counts_0_1_2_3_5_plus": _digit_counts(first_number or ""),
         "next_five_numbers": next_five_numbers,
-        "next_five_numbers_digit_counts_0_to_4": _digit_counts(next_five_joined),
+        "next_five_numbers_digit_counts_0_1_2_3_5_plus": _digit_counts(next_five_joined),
         "trailing_words": trailing_words,
     }
 
