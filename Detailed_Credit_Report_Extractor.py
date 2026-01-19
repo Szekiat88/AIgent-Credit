@@ -136,17 +136,15 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
         trailing_words = " ".join(tokens[last_run["end"] + 1 :]).strip()
     first_six_numbers = numeric_tokens[:6]
     first_number = first_six_numbers[0] if first_six_numbers else None
-    next_five_numbers = first_six_numbers[1:6] if len(first_six_numbers) > 1 else []
-    next_five_joined = "".join(next_five_numbers)
+    next_six_joined = "".join(first_six_numbers)
 
     return {
         "term": term,
         "numeric_sequence": first_six_numbers,
         "first_number": first_number,
         "first_number_digit_counts_0_1_2_3_5_plus": _digit_counts(first_number or ""),
-        "next_five_numbers": next_five_numbers,
-        "next_five_numbers_digit_counts_0_1_2_3_5_plus": _digit_counts(next_five_joined),
-        "trailing_words": trailing_words,
+        "next_six_numbers_digit_counts_0_1_2_3_5_plus": _digit_counts(next_six_joined),
+        "legal_sts": trailing_words,
     }
 
 
@@ -188,8 +186,6 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                 }
             )
 
-    total_amount = sum(totals.values(), Decimal("0"))
-    totals_float = {key: float(value) for key, value in totals.items()}
     totals_by_record_no_float = {str(key): float(value) for key, value in totals_by_record_no.items()}
     amounts_by_record_no_float = {
         str(key): {
@@ -201,9 +197,7 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     return {
         "matched_lines": results,
         "amount_totals": {
-            "by_account_type": totals_float,
             "by_record_no": totals_by_record_no_float,
-            "overall": float(total_amount),
         },
         "amounts_by_record_no": amounts_by_record_no_float,
         "digit_counts_totals": {
@@ -214,11 +208,11 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
 
 def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
     pattern_outstanding = re.compile(
-        r"TOTAL\s+OUTSTANDING\s+BALANCE\s*:\s*([0-9,]+(?:\.\d{2})?)",
+        r"OUTSTANDING\s*([0-9,]+(?:\.\d{2})?)",
         re.IGNORECASE,
     )
     pattern_limit = re.compile(
-        r"TOTAL\s+LIMIT\s*:\s*([0-9,]+(?:\.\d{2})?)",
+        r"LIMIT\s*:\s*([0-9,]+(?:\.\d{2})?)",
         re.IGNORECASE,
     )
     chunks: List[str] = []
