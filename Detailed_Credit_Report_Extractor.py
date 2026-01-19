@@ -154,6 +154,8 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     results: List[Dict[str, Any]] = []
     totals: Dict[str, Decimal] = {}
     totals_by_record_no: Dict[int, Decimal] = {}
+    amounts_by_record_no: Dict[int, List[Decimal]] = {}
+    next_five_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
 
     for record in records:
         for line in record.raw_lines:
@@ -166,8 +168,15 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                 totals_by_record_no[record.no] = totals_by_record_no.get(
                     record.no, Decimal("0")
                 ) + amount_before_date
+                amounts_by_record_no.setdefault(record.no, []).append(amount_before_date)
 
             term_details = _extract_term_details(line)
+            if term_details:
+                next_five_counts = term_details.get(
+                    "next_five_numbers_digit_counts_0_1_2_3_5_plus", {}
+                )
+                for key in next_five_digit_totals:
+                    next_five_digit_totals[key] += next_five_counts.get(key, 0)
             results.append(
                 {
                     "record_no": record.no,
@@ -183,12 +192,23 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     total_amount = sum(totals.values(), Decimal("0"))
     totals_float = {key: float(value) for key, value in totals.items()}
     totals_by_record_no_float = {str(key): float(value) for key, value in totals_by_record_no.items()}
+    amounts_by_record_no_float = {
+        str(key): {
+            "amounts": [float(value) for value in values],
+            "total": float(sum(values, Decimal("0"))),
+        }
+        for key, values in amounts_by_record_no.items()
+    }
     return {
         "matched_lines": results,
         "amount_totals": {
             "by_account_type": totals_float,
             "by_record_no": totals_by_record_no_float,
             "overall": float(total_amount),
+        },
+        "amounts_by_record_no": amounts_by_record_no_float,
+        "digit_counts_totals": {
+            "next_five_numbers_digit_counts_0_1_2_3_5_plus": next_five_digit_totals
         },
     }
 
