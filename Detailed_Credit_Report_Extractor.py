@@ -150,7 +150,6 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
 
 def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
-    totals: Dict[str, Decimal] = {}
     amounts_by_record_no: Dict[int, List[Decimal]] = {}
     first_line_numbers_after_date_by_record_no: Dict[str, List[float]] = {}
     next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
@@ -168,9 +167,6 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             if not matched_keyword:
                 continue
             amount_before_date = _extract_amount_before_date(line)
-            if amount_before_date is not None:
-                totals[matched_keyword] = totals.get(matched_keyword, Decimal("0")) + amount_before_date
-                amounts_by_record_no.setdefault(record.no, []).append(amount_before_date)
 
             term_details = _extract_term_details(line)
             if term_details:
@@ -220,7 +216,7 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             first_value > total if first_value is not None else None
         )
     return {
-        "matched_lines": results,
+        # "matched_lines": results,
         "amount_totals": {
             "by_record_no": totals_by_record_no_float,
         },
@@ -229,6 +225,10 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
         "first_line_numbers_after_date_gt_total_by_record_no": (
             first_line_numbers_after_date_gt_total
         ),
+        "digit_counts_totals": {
+            "next_first_numbers_digit_counts_0_1_2_3_5_plus": next_first_digit_totals
+        },
+        "amounts_by_record_no": amounts_by_record_no_float,
         "digit_counts_totals": {
             "next_first_numbers_digit_counts_0_1_2_3_5_plus": next_first_digit_totals,
             "next_six_numbers_digit_counts_0_1_2_3_5_plus": next_six_digit_totals,
@@ -347,18 +347,18 @@ def main():
             "start_marker": START_MARKER,
             "end_marker": END_MARKER,
         },
-        "total_records": len(records),
-        "records": [
-            {
-                **asdict(r),
-                "first_line_numbers_after_date": [
-                    float(value)
-                    for value in _extract_numbers_after_date(r.raw_lines[0])
-                    if value is not None
-                ],
-            }
-            for r in records
-        ],
+        # "total_records": len(records),
+        # "records": [
+        #     {
+        #         **asdict(r),
+        #         "first_line_numbers_after_date": [
+        #             float(value)
+        #             for value in _extract_numbers_after_date(r.raw_lines[0])
+        #             if value is not None
+        #         ],
+        #     }
+        #     for r in records
+        # ],
         "account_line_analysis": analyze_account_lines(records),
         "totals": total_balances,
     }
