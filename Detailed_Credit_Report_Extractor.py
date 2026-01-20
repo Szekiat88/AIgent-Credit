@@ -136,8 +136,6 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
         trailing_words = " ".join(tokens[last_run["end"] + 1 :]).strip()
     first_six_numbers = numeric_tokens[:6]
     first_number = first_six_numbers[0] if first_six_numbers else None
-    next_five_numbers = first_six_numbers[1:6] if len(first_six_numbers) > 1 else []
-    next_five_joined = "".join(next_five_numbers)
     next_six_joined = "".join(first_six_numbers)
 
     return {
@@ -146,8 +144,6 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
         "first_number": first_number,
         "first_number_digit_counts_0_1_2_3_5_plus": _digit_counts(first_number or ""),
         "next_six_numbers_digit_counts_0_1_2_3_5_plus": _digit_counts(next_six_joined),
-        "next_five_numbers": next_five_numbers,
-        "next_five_numbers_digit_counts_0_1_2_3_5_plus": _digit_counts(next_five_joined),
         "trailing_words": trailing_words,
     }
 
@@ -157,7 +153,7 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     totals: Dict[str, Decimal] = {}
     totals_by_record_no: Dict[int, Decimal] = {}
     amounts_by_record_no: Dict[int, List[Decimal]] = {}
-    next_five_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
+    next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     next_six_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
 
     for record in records:
@@ -175,14 +171,14 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
 
             term_details = _extract_term_details(line)
             if term_details:
-                next_five_counts = term_details.get(
-                    "next_five_numbers_digit_counts_0_1_2_3_5_plus", {}
+                next_first_counts = term_details.get(
+                    "first_number_digit_counts_0_1_2_3_5_plus", {}
                 )
                 next_six_counts = term_details.get(
                     "next_six_numbers_digit_counts_0_1_2_3_5_plus", {}
                 )
-                for key in next_five_digit_totals:
-                    next_five_digit_totals[key] += next_five_counts.get(key, 0)
+                for key in next_six_digit_totals:
+                    next_first_digit_totals[key] += next_first_counts.get(key, 0)
                     next_six_digit_totals[key] += next_six_counts.get(key, 0)
             results.append(
                 {
@@ -211,16 +207,11 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
         },
         "amounts_by_record_no": amounts_by_record_no_float,
         "digit_counts_totals": {
-            "next_five_numbers_digit_counts_0_1_2_3_5_plus": next_five_digit_totals
+            "next_first_numbers_digit_counts_0_1_2_3_5_plus": next_first_digit_totals
         },
         "amounts_by_record_no": amounts_by_record_no_float,
         "digit_counts_totals": {
-            "next_five_numbers_digit_counts_0_1_2_3_5_plus": next_five_digit_totals
-        },
-        "amounts_by_record_no": amounts_by_record_no_float,
-        "next_six_numbers_digit_counts_0_1_2_3_5_plus_total": next_six_digit_totals,
-        "digit_counts_totals": {
-            "next_five_numbers_digit_counts_0_1_2_3_5_plus": next_five_digit_totals,
+            "next_first_numbers_digit_counts_0_1_2_3_5_plus": next_first_digit_totals,
             "next_six_numbers_digit_counts_0_1_2_3_5_plus": next_six_digit_totals,
         },
     }
