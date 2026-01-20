@@ -151,7 +151,6 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
 def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
     totals: Dict[str, Decimal] = {}
-    totals_by_record_no: Dict[int, Decimal] = {}
     amounts_by_record_no: Dict[int, List[Decimal]] = {}
     next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     next_six_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
@@ -164,9 +163,6 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             amount_before_date = _extract_amount_before_date(line)
             if amount_before_date is not None:
                 totals[matched_keyword] = totals.get(matched_keyword, Decimal("0")) + amount_before_date
-                totals_by_record_no[record.no] = totals_by_record_no.get(
-                    record.no, Decimal("0")
-                ) + amount_before_date
                 amounts_by_record_no.setdefault(record.no, []).append(amount_before_date)
 
             term_details = _extract_term_details(line)
@@ -192,7 +188,6 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                 }
             )
 
-    totals_by_record_no_float = {str(key): float(value) for key, value in totals_by_record_no.items()}
     amounts_by_record_no_float = {
         str(key): {
             "amounts": [float(value) for value in values],
@@ -200,14 +195,18 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
         }
         for key, values in amounts_by_record_no.items()
     }
+    totals_by_record_no_float: Dict[str, float] = {}
+    for entry in results:
+        amount = entry.get("amount_before_date")
+        record_no = entry.get("record_no")
+        if amount is None or record_no is None:
+            continue
+        key = str(record_no)
+        totals_by_record_no_float[key] = totals_by_record_no_float.get(key, 0.0) + amount
     return {
         "matched_lines": results,
         "amount_totals": {
             "by_record_no": totals_by_record_no_float,
-        },
-        "amounts_by_record_no": amounts_by_record_no_float,
-        "digit_counts_totals": {
-            "next_first_numbers_digit_counts_0_1_2_3_5_plus": next_first_digit_totals
         },
         "amounts_by_record_no": amounts_by_record_no_float,
         "digit_counts_totals": {
