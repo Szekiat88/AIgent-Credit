@@ -152,10 +152,17 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     results: List[Dict[str, Any]] = []
     totals: Dict[str, Decimal] = {}
     amounts_by_record_no: Dict[int, List[Decimal]] = {}
+    first_line_numbers_after_date_by_record_no: Dict[str, List[float]] = {}
     next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     next_six_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
 
     for record in records:
+        if record.raw_lines:
+            first_line_numbers_after_date_by_record_no[str(record.no)] = [
+                float(value)
+                for value in _extract_numbers_after_date(record.raw_lines[0])
+                if value is not None
+            ]
         for line in record.raw_lines:
             matched_keyword = next((kw for kw in ACCOUNT_KEYWORDS if kw in line), None)
             if not matched_keyword:
@@ -203,12 +210,25 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             continue
         key = str(record_no)
         totals_by_record_no_float[key] = totals_by_record_no_float.get(key, 0.0) + amount
+    first_line_numbers_after_date_filtered: Dict[str, List[float]] = {}
+    first_line_numbers_after_date_gt_total: Dict[str, Optional[bool]] = {}
+    for key, total in totals_by_record_no_float.items():
+        numbers = first_line_numbers_after_date_by_record_no.get(key, [])
+        first_line_numbers_after_date_filtered[key] = numbers
+        first_value = numbers[0] if numbers else None
+        first_line_numbers_after_date_gt_total[key] = (
+            first_value > total if first_value is not None else None
+        )
     return {
         "matched_lines": results,
         "amount_totals": {
             "by_record_no": totals_by_record_no_float,
         },
         "amounts_by_record_no": amounts_by_record_no_float,
+        "first_line_numbers_after_date_by_record_no": first_line_numbers_after_date_filtered,
+        "first_line_numbers_after_date_gt_total_by_record_no": (
+            first_line_numbers_after_date_gt_total
+        ),
         "digit_counts_totals": {
             "next_first_numbers_digit_counts_0_1_2_3_5_plus": next_first_digit_totals,
             "next_six_numbers_digit_counts_0_1_2_3_5_plus": next_six_digit_totals,
