@@ -5,15 +5,18 @@ import json
 import os
 import re
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog
 from typing import Any, Dict, Optional
 
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
 
+from merged_credit_report import merge_reports, resolve_pdf_path
 
 SHEET_NAME = "Knock-Out"
 LABEL_COL = 4  # D
+DEFAULT_EXCEL = "Knockout Matrix Template.xlsx"
 
 
 def pick_excel_file() -> Optional[str]:
@@ -58,6 +61,12 @@ def _first_value(items: list[float] | None) -> Optional[float]:
 def load_merged_report(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def resolve_excel_path(arg_excel: Optional[str]) -> str:
+    if arg_excel:
+        return arg_excel
+    return str(Path(__file__).resolve().parent / DEFAULT_EXCEL)
 
 
 def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
@@ -242,16 +251,22 @@ def fill_knockout_matrix(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fill Knockout Matrix Excel from merged credit report data.")
     parser.add_argument("--excel", help="Path to Knockout Matrix Template.xlsx")
-    parser.add_argument("--merged-json", default="merged_credit_report.json", help="Path to merged JSON output")
+    parser.add_argument("--merged-json", help="Path to merged JSON output")
+    parser.add_argument("--pdf", help="Path to Experian PDF (opens picker if omitted)")
     parser.add_argument("--issuer", default="YOUR ISSUER SDN BHD", help="Issuer name to fill in Excel")
     args = parser.parse_args()
 
-    excel_file = args.excel or pick_excel_file()
-    if not excel_file:
-        print("❌ No file selected")
-        raise SystemExit(1)
+    excel_file = resolve_excel_path(args.excel)
 
-    merged = load_merged_report(args.merged_json)
+    if args.merged_json:
+        merged = load_merged_report(args.merged_json)
+    else:
+        pdf_path = resolve_pdf_path(args.pdf)
+        if not pdf_path:
+            print("❌ No PDF selected.")
+            raise SystemExit(1)
+        merged = merge_reports(pdf_path)
+
     data = build_knockout_data(merged)
 
     out = fill_knockout_matrix(excel_file, args.issuer, data)
