@@ -329,14 +329,7 @@ def split_into_records(lines: List[str]) -> List[BankingAccountRecord]:
 # =============================
 # MAIN
 # =============================
-def main():
-    pdf_path = pick_pdf_file()
-    if not pdf_path:
-        print("❌ No PDF selected.")
-        return
-
-    print(f"📄 Selected PDF: {pdf_path}")
-
+def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
     section_lines = extract_section_lines(pdf_path)
     records = split_into_records(section_lines)
     total_balances = extract_total_balances(pdf_path)
@@ -363,11 +356,24 @@ def main():
         "totals": total_balances,
     }
 
+    return output
+
+
+def main():
+    pdf_path = pick_pdf_file()
+    if not pdf_path:
+        print("❌ No PDF selected.")
+        return
+
+    print(f"📄 Selected PDF: {pdf_path}")
+
+    output = extract_detailed_credit_report(pdf_path)
     out_file = "detailed_credit_report_banking_accounts.json"
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ Extracted {len(records)} records")
+    record_count = len(output.get("account_line_analysis", {}).get("amount_totals", {}).get("by_record_no", {}))
+    print(f"✅ Extracted {record_count} records")
     print(f"✅ Saved to {out_file}")
 
 
