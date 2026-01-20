@@ -152,10 +152,17 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     results: List[Dict[str, Any]] = []
     totals: Dict[str, Decimal] = {}
     amounts_by_record_no: Dict[int, List[Decimal]] = {}
+    first_line_numbers_after_date_by_record_no: Dict[str, List[float]] = {}
     next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     next_six_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
 
     for record in records:
+        if record.raw_lines:
+            first_line_numbers_after_date_by_record_no[str(record.no)] = [
+                float(value)
+                for value in _extract_numbers_after_date(record.raw_lines[0])
+                if value is not None
+            ]
         for line in record.raw_lines:
             matched_keyword = next((kw for kw in ACCOUNT_KEYWORDS if kw in line), None)
             if not matched_keyword:
@@ -209,6 +216,7 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             "by_record_no": totals_by_record_no_float,
         },
         "amounts_by_record_no": amounts_by_record_no_float,
+        "first_line_numbers_after_date_by_record_no": first_line_numbers_after_date_by_record_no,
         "digit_counts_totals": {
             "next_first_numbers_digit_counts_0_1_2_3_5_plus": next_first_digit_totals,
             "next_six_numbers_digit_counts_0_1_2_3_5_plus": next_six_digit_totals,
