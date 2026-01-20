@@ -5,6 +5,7 @@ import json
 import os
 import re
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog
 from typing import Any, Dict, Optional
 
@@ -63,7 +64,9 @@ def load_merged_report(path: str) -> Dict[str, Any]:
 
 
 def resolve_excel_path(arg_excel: Optional[str]) -> str:
-    return arg_excel or DEFAULT_EXCEL
+    if arg_excel:
+        return arg_excel
+    return str(Path(__file__).resolve().parent / DEFAULT_EXCEL)
 
 
 def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
