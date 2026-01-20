@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import json
 import os
 import re
 import tkinter as tk
@@ -35,6 +37,105 @@ def _norm(s: str) -> str:
     s = s.replace("\n", " ")
     s = re.sub(r"\s+", " ", s).strip().lower()
     return s
+
+
+def _format_number(value: Optional[float | int]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, (int, float)):
+        return f"{int(value)}" if float(value).is_integer() else f"{value}"
+    return str(value)
+
+
+def _first_value(items: list[float] | None) -> Optional[float]:
+    if not items:
+        return None
+    return items[0]
+
+
+def load_merged_report(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
+    totals_by_record = analysis.get("amount_totals", {}).get("by_record_no", {})
+    first_values = analysis.get("first_line_numbers_after_date_by_record_no", {})
+    if not totals_by_record and not first_values:
+        return "N/A"
+
+    failures = []
+    for record_no, total in totals_by_record.items():
+        first_value = _first_value(first_values.get(record_no))
+        if first_value is None:
+            continue
+        if float(total) > float(first_value):
+            failures.append(record_no)
+
+    return "Yes" if not failures else "No"
+
+
+def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
+    summary = merged.get("summary_report", {})
+    detailed = merged.get("detailed_credit_report", {})
+    analysis = detailed.get("account_line_analysis", {})
+    totals = detailed.get("totals", {})
+
+    total_limit = totals.get("total_limit") or summary.get("Borrower_Total_Limit_RM")
+    total_outstanding = totals.get("total_outstanding_balance") or summary.get("Borrower_Outstanding_RM")
+    total_banking_within_limit = (
+        "YES" if total_outstanding is not None and total_limit is not None and total_outstanding <= total_limit else "NO"
+    )
+
+    return {
+        "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(summary.get("i_SCORE")),
+        "Scoring by CRA Agency (Credit Score Equivalent)": None,
+        "Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)": _format_number(
+            summary.get("Incorporation_Year")
+        ),
+        "Company Status (Existing Only)": summary.get("Status"),
+        "Exempt Private Company": summary.get("Private_Exempt_Company"),
+        "Winding Up / Bankruptcy Proceedings Record": _format_number(summary.get("Winding_Up_Record")),
+        "Credit Applications Approved for Last 12 months (per primary CRA report)": _format_number(
+            summary.get("Credit_Applications_Approved_Last_12_months")
+        ),
+        "Credit Applications Pending (per primary CRA report)": _format_number(
+            summary.get("Credit_Applications_Pending")
+        ),
+        "Legal Action taken (from Banking) (per primary CRA report)": _format_number(
+            summary.get("Legal_Action_taken_from_Banking")
+        ),
+        "Existing No. of Facility (from Banking) (per primary CRA report)": _format_number(
+            summary.get("Existing_No_of_Facility_from_Banking")
+        ),
+        "Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)": _format_number(
+            summary.get("Legal_Suits")
+        ),
+        "Legal Case - Status (per primary CRA report)": None,
+        "Trade / Credit Reference (per primary CRA report)": None,
+        "Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)": _format_number(
+            summary.get("Total_Enquiries_Last_12_months")
+        ),
+        "Special Attention Account (per primary CRA report)": _format_number(
+            summary.get("Special_Attention_Account")
+        ),
+        "Summary of Total Liabilities (Outstanding) (per primary CRA report)": _format_number(
+            summary.get("Borrower_Outstanding_RM")
+        ),
+        "Summary of Total Liabilities (Total Limit) (per primary CRA report)": _format_number(
+            summary.get("Borrower_Total_Limit_RM")
+        ),
+        "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)": _compute_overdraft_compliance(
+            analysis
+        ),
+        "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)": total_banking_within_limit,
+        "CCRIS Loan Account - Conduct Count (per primary CRA report)": None,
+        "CCRIS Loan Account - Legal Status (per primary CRA report)": None,
+        "Total Limit": _format_number(total_limit),
+        "Total Outstanding Balance": _format_number(total_outstanding),
+    }
 
 
 def find_issuer_data_column(ws: Worksheet) -> int:
@@ -139,24 +240,19 @@ def fill_knockout_matrix(
 
 
 if __name__ == "__main__":
-    excel_file = pick_excel_file()
+    parser = argparse.ArgumentParser(description="Fill Knockout Matrix Excel from merged credit report data.")
+    parser.add_argument("--excel", help="Path to Knockout Matrix Template.xlsx")
+    parser.add_argument("--merged-json", default="merged_credit_report.json", help="Path to merged JSON output")
+    parser.add_argument("--issuer", default="YOUR ISSUER SDN BHD", help="Issuer name to fill in Excel")
+    args = parser.parse_args()
+
+    excel_file = args.excel or pick_excel_file()
     if not excel_file:
         print("❌ No file selected")
         raise SystemExit(1)
 
-    issuer = "YOUR ISSUER SDN BHD"
+    merged = load_merged_report(args.merged_json)
+    data = build_knockout_data(merged)
 
-    # Put your extracted values here
-    data = {
-        "Scoring by CRA Agency (Issuer's Credit Agency Score)": "742",
-        "Scoring by CRA Agency (Credit Score Equivalent)": "AA",
-        "Winding Up / Bankruptcy Proceedings Record": "NO INFORMATION AVAILABLE",
-        "Credit Applications Approved for Last 12 months (per primary CRA report)": "2",
-        "Credit Applications Pending (per primary CRA report)": "0",
-        "Legal Case - Status (per primary CRA report)": "SETTLED",
-        "Issuer must be a business registered in Malaysia": "YES",
-        "Avoid Industry Sector": "PASS",
-    }
-
-    out = fill_knockout_matrix(excel_file, issuer, data)
+    out = fill_knockout_matrix(excel_file, args.issuer, data)
     print("✅ File saved:", out)
