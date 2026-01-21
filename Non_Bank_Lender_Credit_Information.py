@@ -156,14 +156,19 @@ def summarize_last_periods(month_values_in_order: List[int]) -> Dict[str, Any]:
     last1 = month_values_in_order[:1]
     last6 = month_values_in_order[:6]
 
+    last1_freq = freq_bucket(last1)
+    last6_freq = freq_bucket(last6)
+
     return {
         "last_1_month": {
             "values": last1,
-            "freq": freq_bucket(last1),
+            "freq": last1_freq,
+            "freq_total": sum(last1_freq.values()),
         },
         "last_6_months": {
             "values": last6,
-            "freq": freq_bucket(last6),
+            "freq": last6_freq,
+            "freq_total": sum(last6_freq.values()),
         }
     }
 
