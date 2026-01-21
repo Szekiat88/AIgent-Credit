@@ -172,6 +172,20 @@ def summarize_last_periods(month_values_in_order: List[int]) -> Dict[str, Any]:
         }
     }
 
+def sum_freq_buckets(stats_list: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+    summed = {
+        "last_1_month": {"0": 0, "1": 0, "2": 0, "3": 0, "4+": 0},
+        "last_6_months": {"0": 0, "1": 0, "2": 0, "3": 0, "4+": 0},
+    }
+
+    for stats in stats_list:
+        for period in ("last_1_month", "last_6_months"):
+            freq = stats.get(period, {}).get("freq", {})
+            for key in summed[period]:
+                summed[period][key] += int(freq.get(key, 0))
+
+    return summed
+
 def parse_outstanding_with_stats(lines: List[str]) -> Dict[str, Any]:
     data_lines, header_line, total_line = extract_block(lines)
     if not header_line:
@@ -211,6 +225,8 @@ def parse_outstanding_with_stats(lines: List[str]) -> Dict[str, Any]:
             "raw": line
         })
 
+    stats_totals = sum_freq_buckets([record["stats"] for record in records])
+
     totals = None
     if total_line:
         m = re.search(r"TOTAL\s+([\d,]+\.\d{2})\s+TOTAL\s+([\d,]+\.\d{2})", total_line, re.IGNORECASE)
@@ -225,6 +241,16 @@ def parse_outstanding_with_stats(lines: List[str]) -> Dict[str, Any]:
         "initials": initials,
         "best_month_guess": month_info,
         "records": records,
+        "stats_totals": {
+            "last_1_month": {
+                "freq": stats_totals["last_1_month"],
+                "freq_total": sum(stats_totals["last_1_month"].values()),
+            },
+            "last_6_months": {
+                "freq": stats_totals["last_6_months"],
+                "freq_total": sum(stats_totals["last_6_months"].values()),
+            },
+        },
         "totals": totals
     }
 
