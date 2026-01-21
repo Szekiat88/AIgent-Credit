@@ -109,6 +109,16 @@ def extract_section_after_header(header: str, text: str) -> Optional[str]:
     return match.group(0) if match else None
 
 
+def extract_text_between_markers(start_marker: str, end_marker: str, text: str) -> Optional[str]:
+    start_esc = re.escape(start_marker)
+    end_esc = re.escape(end_marker)
+    pattern = rf"{start_esc}(.*?){end_esc}"
+    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    return match.group(1).strip() or None
+
+
 def extract_borrower_liabilities(text: str) -> tuple[Optional[float], Optional[float]]:
     section = extract_section_after_header("SUMMARY OF POTENTIAL & CURRENT LIABILITIES", text)
     if not section:
@@ -167,6 +177,11 @@ def extract_fields(pdf_path: str) -> dict:
         "Legal_Suits": extract_legal_suits_total(text),
         "Borrower_Outstanding_RM": borrower_outstanding,
         "Borrower_Total_Limit_RM": borrower_total_limit,
+        "Non_Bank_Lender_Credit_Info_To_Written_Off_Account": extract_text_between_markers(
+            "Non-Bank Lender Credit Information",
+            "written-off account",
+            text,
+        ),
     }
 
 
