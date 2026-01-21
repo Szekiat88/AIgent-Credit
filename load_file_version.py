@@ -135,6 +135,32 @@ def extract_borrower_liabilities(text: str) -> tuple[Optional[float], Optional[f
     return None, None
 
 
+def extract_trade_credit_amount_due(text: str) -> Optional[float]:
+    section = extract_text_between_headers(
+        "TRADE / CREDIT REFERENCE (CR)",
+        "LEGEND",
+        text,
+    )
+    if not section:
+        return None
+    amounts = re.findall(
+        r"Amount\s+Due\s*[:\-]?\s*([0-9][0-9,]*(?:\.\d{2})?)",
+        section,
+        re.IGNORECASE,
+    )
+    if not amounts:
+        return None
+    return sum(parse_money(amount) or 0 for amount in amounts)
+
+
+def extract_text_between_headers(start_header: str, end_header: str, text: str) -> Optional[str]:
+    start_esc = re.escape(start_header)
+    end_esc = re.escape(end_header)
+    pattern = rf"{start_esc}(.*?){end_esc}"
+    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+    return match.group(1) if match else None
+
+
 def extract_fields(pdf_path: str) -> dict:
     """Extract required fields from PDF."""
     text = read_pdf_text(pdf_path)
@@ -167,6 +193,7 @@ def extract_fields(pdf_path: str) -> dict:
         "Legal_Suits": extract_legal_suits_total(text),
         "Borrower_Outstanding_RM": borrower_outstanding,
         "Borrower_Total_Limit_RM": borrower_total_limit,
+        "Trade_Credit_Reference_Amount_Due_RM": extract_trade_credit_amount_due(text),
     }
 
 
