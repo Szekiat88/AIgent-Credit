@@ -135,6 +135,50 @@ def extract_borrower_liabilities(text: str) -> tuple[Optional[float], Optional[f
     return None, None
 
 
+def extract_litigation_defendant_flags(text: str) -> dict[str, str]:
+    section = extract_section_after_header("SECTION 3: LITIGATION INFORMATION", text)
+    labels = [
+        "CASE WITHDRAWN / SETTLED",
+        "OTHER KNOWN LEGAL SUITS WITH LIMITED DETAILS - SUBJECT AS DEFENDANT",
+        "LEGAL SUITS - SUBJECT AS DEFENDANT",
+    ]
+
+    def subsection_after_label(section_text: str, label: str) -> Optional[str]:
+        label_esc = re.escape(label)
+        other_labels = [re.escape(item) for item in labels if item != label]
+        if other_labels:
+            boundary = "|".join(other_labels)
+            pattern = rf"{label_esc}\s*(.*?)(?=({boundary})|$)"
+        else:
+            pattern = rf"{label_esc}\s*(.*)$"
+        match = re.search(pattern, section_text, re.IGNORECASE | re.DOTALL)
+        return match.group(1) if match else None
+
+    def has_defendant_name(block: Optional[str]) -> bool:
+        if not block:
+            return False
+        return re.search(r"\bDefendant Name\b", block, re.IGNORECASE) is not None
+
+    if not section:
+        return {
+            "Case_Withdrawn_Settled_Defendant_Name": "No",
+            "Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name": "No",
+            "Legal_Suits_Subject_As_Defendant_Defendant_Name": "No",
+        }
+
+    return {
+        "Case_Withdrawn_Settled_Defendant_Name": "Yes"
+        if has_defendant_name(subsection_after_label(section, labels[0]))
+        else "No",
+        "Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name": "Yes"
+        if has_defendant_name(subsection_after_label(section, labels[1]))
+        else "No",
+        "Legal_Suits_Subject_As_Defendant_Defendant_Name": "Yes"
+        if has_defendant_name(subsection_after_label(section, labels[2]))
+        else "No",
+    }
+
+
 def extract_fields(pdf_path: str) -> dict:
     """Extract required fields from PDF."""
     text = read_pdf_text(pdf_path)
@@ -142,6 +186,7 @@ def extract_fields(pdf_path: str) -> dict:
     incorporation_date = extract_date_after_label("Incorporation Date", text)
     incorporation_year = int(incorporation_date[-4:]) if incorporation_date else None
     borrower_outstanding, borrower_total_limit = extract_borrower_liabilities(text)
+    litigation_flags = extract_litigation_defendant_flags(text)
 
     return {
         "pdf_file": pdf_path,
@@ -167,6 +212,7 @@ def extract_fields(pdf_path: str) -> dict:
         "Legal_Suits": extract_legal_suits_total(text),
         "Borrower_Outstanding_RM": borrower_outstanding,
         "Borrower_Total_Limit_RM": borrower_total_limit,
+        **litigation_flags,
     }
 
 
