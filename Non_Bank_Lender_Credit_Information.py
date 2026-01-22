@@ -279,15 +279,31 @@ def extract_section_lines(pdf_path: str) -> List[str]:
     return lines_between
 
 
-def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
+def extract_non_bank_lender_credit_information(pdf_path: str) -> Dict[str, Any]:
     section_lines = extract_section_lines(pdf_path)
-    print(f"Extracted {section_lines} lines between markers.")
-    return section_lines
-   
+    result: Dict[str, Any] = {
+        "source_pdf": pdf_path,
+        "section": {"start_marker": START_MARKER, "end_marker": END_MARKER},
+        "records": [],
+        "stats_totals": None,
+        "totals": None,
+    }
+    if not section_lines:
+        result["error"] = "Non-bank lender section not found."
+        return result
+
+    try:
+        parsed = parse_outstanding_with_stats(section_lines)
+    except ValueError as exc:
+        result["error"] = str(exc)
+        return result
+
+    result.update(parsed)
+    return result
+
 
 if __name__ == "__main__":
     pdf_path = pick_pdf_file()
-    sample_lines =extract_detailed_credit_report(pdf_path)  # replace with actual PDF path
-    result = parse_outstanding_with_stats(sample_lines)
+    result = extract_non_bank_lender_credit_information(pdf_path)
     import json
     print(json.dumps(result, indent=2))
