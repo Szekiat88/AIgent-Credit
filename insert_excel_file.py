@@ -53,28 +53,31 @@ def _format_number(value: Optional[float | int]) -> Optional[str]:
 
 
 def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
-    counts = value.get("next_six_numbers_digit_counts_0_1_2_3_5_plus")
-    if not isinstance(counts, dict):
+    next_six_counts = value.get("next_six_numbers_digit_counts_0_1_2_3_5_plus")
+    next_first_counts = value.get("next_first_numbers_digit_counts_0_1_2_3_5_plus")
+    if not isinstance(next_six_counts, dict) and not isinstance(next_first_counts, dict):
         return None
-    label_map = {
-        "0": "MIA-0",
-        "1": "MIA-1",
-        "2": "MIA-2",
-        "3": "MIA-3",
-        "5_plus": "MIA-5+",
-    }
-    pieces = []
-    for key, label in label_map.items():
-        raw_count = counts.get(key)
-        if raw_count is None:
-            continue
+
+    parts = []
+    if isinstance(next_six_counts, dict):
+        raw_mia2 = next_six_counts.get("2")
         try:
-            count = int(raw_count)
+            mia2_count = int(raw_mia2)
         except (TypeError, ValueError):
-            continue
-        if count != 0:
-            pieces.append(f"{label}: {count}")
-    return ", ".join(pieces) if pieces else None
+            mia2_count = 0
+        if mia2_count != 0:
+            parts.append(f"> {mia2_count} times MIA2 for past 6 months")
+
+    if isinstance(next_first_counts, dict):
+        raw_mia1 = next_first_counts.get("1")
+        try:
+            mia1_count = int(raw_mia1)
+        except (TypeError, ValueError):
+            mia1_count = 0
+        if mia1_count != 0:
+            parts.append(f"current 1 month > {mia1_count} times MIA1")
+
+    return " and /or ".join(parts) if parts else None
 
 
 def _format_cell_value(value: Any) -> Any:
