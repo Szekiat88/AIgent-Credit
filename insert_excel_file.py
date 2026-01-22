@@ -86,17 +86,46 @@ def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
     return "Yes" if not failures else "No"
 
 
+def _non_bank_conduct_count(stats_totals: Dict[str, Any]) -> Optional[int]:
+    last_6 = stats_totals.get("last_6_months", {}).get("freq")
+    if not last_6:
+        return None
+    return sum(int(last_6.get(key, 0)) for key in ("1", "2", "3", "4+"))
+
+
+def _non_bank_legal_status(records: list[Dict[str, Any]]) -> Optional[str]:
+    markers = sorted({record.get("legal_marker") for record in records if record.get("legal_marker")})
+    if not markers:
+        return "No"
+    return ", ".join(markers)
+
+
 def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     summary = merged.get("summary_report", {})
     detailed = merged.get("detailed_credit_report", {})
+    non_bank = merged.get("non_bank_lender_credit_information", {})
     analysis = detailed.get("account_line_analysis", {})
     totals = detailed.get("totals", {})
+    non_bank_totals = non_bank.get("totals", {}) if isinstance(non_bank.get("totals", {}), dict) else {}
+    non_bank_stats = non_bank.get("stats_totals", {}) if isinstance(non_bank.get("stats_totals", {}), dict) else {}
+    non_bank_records = non_bank.get("records", []) if isinstance(non_bank.get("records", []), list) else []
 
     total_limit = totals.get("total_limit") or summary.get("Borrower_Total_Limit_RM")
     total_outstanding = totals.get("total_outstanding_balance") or summary.get("Borrower_Outstanding_RM")
     total_banking_within_limit = (
         "YES" if total_outstanding is not None and total_limit is not None and total_outstanding <= total_limit else "NO"
     )
+    non_bank_total_limit = non_bank_totals.get("total_limit")
+    non_bank_total_outstanding = non_bank_totals.get("total_outstanding")
+    non_bank_within_limit = (
+        "YES"
+        if non_bank_total_outstanding is not None
+        and non_bank_total_limit is not None
+        and non_bank_total_outstanding <= non_bank_total_limit
+        else "NO"
+    )
+    non_bank_conduct_count = _non_bank_conduct_count(non_bank_stats)
+    non_bank_legal_status = _non_bank_legal_status(non_bank_records)
 
     return {
         "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(summary.get("i_SCORE")),
@@ -140,8 +169,15 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
             analysis
         ),
         "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)": total_banking_within_limit,
+        "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report)": (
+            non_bank_within_limit if non_bank_total_limit is not None and non_bank_total_outstanding is not None else "N/A"
+        ),
         "CCRIS Loan Account - Conduct Count (per primary CRA report)": None,
         "CCRIS Loan Account - Legal Status (per primary CRA report)": None,
+        "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)": _format_number(
+            non_bank_conduct_count
+        ),
+        "Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report)": non_bank_legal_status,
         "Total Limit": _format_number(total_limit),
         "Total Outstanding Balance": _format_number(total_outstanding),
     }
