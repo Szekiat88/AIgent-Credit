@@ -166,6 +166,8 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     non_bank_conduct_count = _non_bank_conduct_count(non_bank_stats)
     non_bank_legal_status = _non_bank_legal_status(non_bank_records)
 
+    print("Hello " + str(analysis.get("digit_counts_totals")))
+
     return {
         "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(summary.get("i_SCORE")),
         "Scoring by CRA Agency (Credit Score Equivalent)": None,
@@ -214,8 +216,8 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report)": (
             non_bank_within_limit if non_bank_total_limit is not None and non_bank_total_outstanding is not None else "N/A"
         ),
-        "CCRIS Loan Account - Conduct Count (per primary CRA report)": None,
-        "CCRIS Loan Account - Legal Status (per primary CRA report)": None,
+        "CCRIS Loan Account - Conduct Count (per primary CRA report)": analysis.get("digit_counts_totals"),
+        "CCRIS Loan Account - Legal Status (per primary CRA report)": analysis.get("Bank_LOD"),
         "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)": _format_number(
             non_bank_conduct_count
         ),

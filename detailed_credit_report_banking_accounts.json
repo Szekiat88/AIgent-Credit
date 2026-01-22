@@ -78,4 +78,7 @@
     }
   },
   "totals": {
-    "limit": 
+    "total_outstanding_balance": 30667835.0,
+    "total_limit": 34070376.0
+  }
+}
