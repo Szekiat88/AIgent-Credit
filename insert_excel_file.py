@@ -52,6 +52,45 @@ def _format_number(value: Optional[float | int]) -> Optional[str]:
     return str(value)
 
 
+def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
+    next_six_counts = value.get("next_six_numbers_digit_counts_0_1_2_3_5_plus")
+    next_first_counts = value.get("next_first_numbers_digit_counts_0_1_2_3_5_plus")
+    if not isinstance(next_six_counts, dict) and not isinstance(next_first_counts, dict):
+        return None
+
+    parts = []
+    if isinstance(next_six_counts, dict):
+        raw_mia2 = next_six_counts.get("2")
+        try:
+            mia2_count = int(raw_mia2)
+        except (TypeError, ValueError):
+            mia2_count = 0
+        if mia2_count != 0:
+            parts.append(f"> {mia2_count} times MIA2 for past 6 months")
+
+    if isinstance(next_first_counts, dict):
+        raw_mia1 = next_first_counts.get("1")
+        try:
+            mia1_count = int(raw_mia1)
+        except (TypeError, ValueError):
+            mia1_count = 0
+        if mia1_count != 0:
+            parts.append(f"current 1 month > {mia1_count} times MIA1")
+
+    return " and /or ".join(parts) if parts else None
+
+
+def _format_cell_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        mia_counts = _format_mia_counts(value)
+        if mia_counts is not None:
+            return mia_counts
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return json.dumps(value, ensure_ascii=False)
+    return value
+
+
 def _first_value(items: list[float] | None) -> Optional[float]:
     if not items:
         return None
@@ -270,7 +309,7 @@ def fill_knockout_matrix(
             missing.append(label)
             continue
 
-        ws.cell(row, issuer_data_col).value = value
+        ws.cell(row, issuer_data_col).value = _format_cell_value(value)
         written += 1
 
     # 5) Save output
