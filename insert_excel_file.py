@@ -52,6 +52,42 @@ def _format_number(value: Optional[float | int]) -> Optional[str]:
     return str(value)
 
 
+def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
+    counts = value.get("next_six_numbers_digit_counts_0_1_2_3_5_plus")
+    if not isinstance(counts, dict):
+        return None
+    label_map = {
+        "0": "MIA-0",
+        "1": "MIA-1",
+        "2": "MIA-2",
+        "3": "MIA-3",
+        "5_plus": "MIA-5+",
+    }
+    pieces = []
+    for key, label in label_map.items():
+        raw_count = counts.get(key)
+        if raw_count is None:
+            continue
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            continue
+        if count != 0:
+            pieces.append(f"{label}: {count}")
+    return ", ".join(pieces) if pieces else None
+
+
+def _format_cell_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        mia_counts = _format_mia_counts(value)
+        if mia_counts is not None:
+            return mia_counts
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return json.dumps(value, ensure_ascii=False)
+    return value
+
+
 def _first_value(items: list[float] | None) -> Optional[float]:
     if not items:
         return None
@@ -270,7 +306,7 @@ def fill_knockout_matrix(
             missing.append(label)
             continue
 
-        ws.cell(row, issuer_data_col).value = value
+        ws.cell(row, issuer_data_col).value = _format_cell_value(value)
         written += 1
 
     # 5) Save output
