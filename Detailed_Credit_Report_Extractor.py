@@ -129,11 +129,11 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
         runs.append({"start": current_start, "end": current_end})
 
     numeric_tokens: List[str] = []
-    trailing_words = ""
+    bank_lod = ""
     if runs:
         last_run = runs[-1]
         numeric_tokens = tokens[last_run["start"] : last_run["end"] + 1]
-        trailing_words = " ".join(tokens[last_run["end"] + 1 :]).strip()
+        bank_lod = " ".join(tokens[last_run["end"] + 1 :]).strip()
     first_six_numbers = numeric_tokens[:6]
     first_number = first_six_numbers[0] if first_six_numbers else None
     next_six_joined = "".join(first_six_numbers)
@@ -144,7 +144,7 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
         "first_number": first_number,
         "first_number_digit_counts_0_1_2_3_5_plus": _digit_counts(first_number or ""),
         "next_six_numbers_digit_counts_0_1_2_3_5_plus": _digit_counts(next_six_joined),
-        "trailing_words": trailing_words,
+        "bank_lod": bank_lod,
     }
 
 
@@ -188,6 +188,7 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                         float(amount_before_date) if amount_before_date is not None else None
                     ),
                     "term_details": term_details,
+                    "bank_lod": term_details.get("bank_lod") if term_details else "None",
                 }
             )
 
