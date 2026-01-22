@@ -151,8 +151,11 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         "Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)": _format_number(
             summary.get("Legal_Suits")
         ),
-        "Legal Case - Status (per primary CRA report)": None,
-        "Trade / Credit Reference (per primary CRA report)": None,
+        "Legal Case - Status (per primary CRA report)": _format_number(
+            summary.get("Legal_Suits_Subject_As_Defendant_Defendant_Name") + summary.get("Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name") + summary.get("Case_Withdrawn_Settled_Defendant_Name") 
+        ),
+        "Trade / Credit Reference (per primary CRA report)": _format_number(
+            summary.get("Trade_Credit_Reference_Amount_Due_RM")), 
         "Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)": _format_number(
             summary.get("Total_Enquiries_Last_12_months")
         ),
