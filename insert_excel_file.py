@@ -52,30 +52,38 @@ def _format_number(value: Optional[float | int]) -> Optional[str]:
     return str(value)
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
     next_six_counts = value.get("next_six_numbers_digit_counts_0_1_2_3_5_plus")
     next_first_counts = value.get("next_first_numbers_digit_counts_0_1_2_3_5_plus")
-    if not isinstance(next_six_counts, dict) and not isinstance(next_first_counts, dict):
+    last_1_counts = value.get("last_1_month", {}).get("freq") if isinstance(value.get("last_1_month"), dict) else None
+    last_6_counts = value.get("last_6_months", {}).get("freq") if isinstance(value.get("last_6_months"), dict) else None
+
+    if not any(isinstance(v, dict) for v in (next_six_counts, next_first_counts, last_1_counts, last_6_counts)):
         return None
 
-    parts = []
-    if isinstance(next_six_counts, dict):
-        raw_mia2 = next_six_counts.get("2")
-        try:
-            mia2_count = int(raw_mia2)
-        except (TypeError, ValueError):
-            mia2_count = 0
-        if mia2_count != 0:
-            parts.append(f"> {mia2_count} times MIA2 for past 6 months")
+    def format_counts(counts: Dict[str, Any], plus_key: str) -> str:
+        mia1 = _safe_int(counts.get("1"))
+        mia2 = _safe_int(counts.get("2"))
+        mia3 = _safe_int(counts.get("3"))
+        mia4_plus = _safe_int(counts.get(plus_key))
+        return f"MIA1: {mia1}, MIA2: {mia2}, MIA3: {mia3}, MIA4+: {mia4_plus}"
 
+    parts = []
     if isinstance(next_first_counts, dict):
-        raw_mia1 = next_first_counts.get("1")
-        try:
-            mia1_count = int(raw_mia1)
-        except (TypeError, ValueError):
-            mia1_count = 0
-        if mia1_count != 0:
-            parts.append(f"current 1 month > {mia1_count} times MIA1")
+        parts.append(f"current 1 month {format_counts(next_first_counts, '5_plus')}")
+    if isinstance(last_1_counts, dict):
+        parts.append(f"current 1 month {format_counts(last_1_counts, '4+')}")
+    if isinstance(next_six_counts, dict):
+        parts.append(f"past 6 months {format_counts(next_six_counts, '5_plus')}")
+    if isinstance(last_6_counts, dict):
+        parts.append(f"past 6 months {format_counts(last_6_counts, '4+')}")
 
     return " and /or ".join(parts) if parts else None
 
@@ -166,8 +174,6 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     non_bank_conduct_count = _non_bank_conduct_count(non_bank_stats)
     non_bank_legal_status = _non_bank_legal_status(non_bank_records)
 
-    print("Hello " + str(analysis.get("digit_counts_totals")))
-
     return {
         "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(summary.get("i_SCORE")),
         "Scoring by CRA Agency (Credit Score Equivalent)": None,
@@ -218,9 +224,9 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "CCRIS Loan Account - Conduct Count (per primary CRA report)": analysis.get("digit_counts_totals"),
         "CCRIS Loan Account - Legal Status (per primary CRA report)": analysis.get("Bank_LOD"),
-        "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)": _format_number(
-            non_bank_conduct_count
-        ),
+        "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)": non_bank_stats
+        if non_bank_stats
+        else _format_number(non_bank_conduct_count),
         "Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report)": non_bank_legal_status,
         "Total Limit": _format_number(total_limit),
         "Total Outstanding Balance": _format_number(total_outstanding),
