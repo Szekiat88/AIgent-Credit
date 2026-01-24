@@ -302,10 +302,31 @@ def set_issuer_name(ws: Worksheet, issuer_col_for_name: int, issuer_name: str) -
             return
 
 
+def set_cra_report_dates(ws: Worksheet, cra_report_date: Optional[str]) -> None:
+    if not cra_report_date:
+        return
+
+    target_label = "date (cra report):"
+    for r in range(1, 15):
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(r, c).value
+            if isinstance(v, str) and _norm(v) == target_label:
+                target_col = None
+                for offset in range(1, 4):
+                    next_cell = ws.cell(r, c + offset)
+                    if isinstance(next_cell.value, str) and "dd/mm/yyyy" in next_cell.value.lower():
+                        target_col = c + offset
+                        break
+                if target_col is None:
+                    target_col = c + 1
+                ws.cell(r, target_col).value = cra_report_date
+
+
 def fill_knockout_matrix(
     file_path: str,
     issuer_name: str,
     data_by_label: Dict[str, Any],
+    cra_report_date: Optional[str] = None,
 ) -> str:
     wb = openpyxl.load_workbook(file_path)
     if SHEET_NAME not in wb.sheetnames:
@@ -323,6 +344,8 @@ def fill_knockout_matrix(
             break
     if issuer_name_value_col:
         set_issuer_name(ws, issuer_name_value_col, issuer_name)
+
+    set_cra_report_dates(ws, cra_report_date)
 
     # 2) Issuer data column for Knock-Out Items: header 'Issuer' at M6
     issuer_data_col = find_issuer_data_column(ws)
@@ -380,6 +403,7 @@ if __name__ == "__main__":
     data = build_knockout_data(merged)
     summary = merged.get("summary_report", {})
     issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
+    cra_report_date = summary.get("Last_Updated_By_Experian")
 
-    out = fill_knockout_matrix(excel_file, issuer_name, data)
+    out = fill_knockout_matrix(excel_file, issuer_name, data, cra_report_date=cra_report_date)
     print("✅ File saved:", out)
