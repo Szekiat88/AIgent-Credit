@@ -73,6 +73,15 @@ def extract_word_after_label(label: str, text: str) -> Optional[str]:
     return v.split("\n")[0].strip()
 
 
+def extract_name_of_subject(text: str) -> Optional[str]:
+    """
+    Extract the Name Of Subject field.
+    Accepts any non-empty line after the label.
+    """
+    v = extract_first(r"Name Of Subject\s*[:\-]?\s*([^\n]+)", text)
+    return v.strip() if v else None
+
+
 def parse_money(value: str) -> Optional[float]:
     if not value:
         return None
@@ -221,6 +230,7 @@ def extract_fields(pdf_path: str) -> dict:
 
     return {
         "pdf_file": pdf_path,
+        "Name_Of_Subject": extract_name_of_subject(text),
         "i_SCORE": extract_iscore(text),
         "Incorporation_Year": incorporation_year,
         "Status": extract_word_after_label("Status", text),
