@@ -17,6 +17,18 @@ from merged_credit_report import merge_reports, resolve_pdf_path
 SHEET_NAME = "Knock-Out"
 LABEL_COL = 4  # D
 DEFAULT_EXCEL = "Knockout Matrix Template.xlsx"
+SCORE_RANGE_EQUIVALENTS = [
+    (742, float("inf"), "A"),
+    (701, 740, "A"),
+    (661, 700, "B"),
+    (621, 660, "B"),
+    (581, 620, "C"),
+    (541, 580, "C"),
+    (501, 540, "D"),
+    (461, 500, "E"),
+    (421, 460, "F"),
+    (0, 420, "F"),
+]
 
 
 def pick_excel_file() -> Optional[str]:
@@ -133,6 +145,15 @@ def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
     return "Yes" if not failures else "No"
 
 
+def score_to_equivalent(score: Optional[int]) -> Optional[str]:
+    if score is None:
+        return None
+    for lower, upper, grade in SCORE_RANGE_EQUIVALENTS:
+        if lower <= score <= upper:
+            return grade
+    return None
+
+
 def _non_bank_conduct_count(stats_totals: Dict[str, Any]) -> Optional[int]:
     last_6 = stats_totals.get("last_6_months", {}).get("freq")
     if not last_6:
@@ -174,9 +195,11 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     non_bank_conduct_count = _non_bank_conduct_count(non_bank_stats)
     non_bank_legal_status = _non_bank_legal_status(non_bank_records)
 
+    credit_score = summary.get("i_SCORE")
+
     return {
-        "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(summary.get("i_SCORE")),
-        "Scoring by CRA Agency (Credit Score Equivalent)": None,
+        "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(credit_score),
+        "Scoring by CRA Agency (Credit Score Equivalent)": score_to_equivalent(credit_score),
         "Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)": _format_number(
             summary.get("Incorporation_Year")
         ),
