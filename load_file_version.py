@@ -59,6 +59,22 @@ def extract_date_after_label(label: str, text: str) -> Optional[str]:
     return extract_first(pattern, text)
 
 
+def extract_last_updated_by_experian(text: str) -> Optional[str]:
+    """
+    Extract the "Last Updated by Experian" date.
+    Accepts either DD MMM YYYY or DD/MM/YYYY style dates.
+    """
+    patterns = [
+        r"Last Updated by Experian\s*[:\-]?\s*([0-9]{1,2}\s+[A-Za-z]{3}\s+[0-9]{4})",
+        r"Last Updated by Experian\s*[:\-]?\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{4})",
+    ]
+    for pattern in patterns:
+        value = extract_first(pattern, text)
+        if value:
+            return value
+    return None
+
+
 def extract_word_after_label(label: str, text: str) -> Optional[str]:
     """
     Extract a short value after a label, e.g.:
@@ -229,6 +245,7 @@ def extract_fields(pdf_path: str) -> dict:
         "Incorporation_Year": incorporation_year,
         "Status": extract_word_after_label("Status", text),
         "Private_Exempt_Company": extract_word_after_label("Private Exempt Company", text),
+        "Last_Updated_By_Experian": extract_last_updated_by_experian(text),
 
         "Winding_Up_Record": extract_int_after_label("Winding Up Record", text),
         "Credit_Applications_Approved_Last_12_months": extract_int_after_label(
