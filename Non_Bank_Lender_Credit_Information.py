@@ -237,9 +237,6 @@ def parse_outstanding_with_stats(lines: List[str]) -> Dict[str, Any]:
             }
 
     return {
-        "header_line": header_line,
-        "initials": initials,
-        "best_month_guess": month_info,
         "records": records,
         "stats_totals": {
             "last_1_month": {

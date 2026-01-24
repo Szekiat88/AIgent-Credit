@@ -159,13 +159,7 @@ def extract_text_between_headers(start_header: str, end_header: str, text: str) 
     pattern = rf"{start_esc}(.*?){end_esc}"
     match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
     return match.group(1) if match else None
-    section = extract_section_after_header("Trade / Credit Reference", text)
-    if not section:
-        return None
-    match = re.search(r"Amount\s+Due\s*[:\-]?\s*([0-9][0-9,]*(?:\.\d{2})?)", section, re.IGNORECASE)
-    if not match:
-        return None
-    return parse_money(match.group(1))
+
 def extract_litigation_defendant_flags(text: str) -> dict[str, str]:
     section = extract_section_after_header("SECTION 3: LITIGATION INFORMATION", text)
     labels = [

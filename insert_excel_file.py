@@ -218,7 +218,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)": _compute_overdraft_compliance(
             analysis
         ),
-        "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)": total_banking_within_limit,
+        "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)": total_banking_within_limit + ", outstanding: " + str(total_outstanding) + ", limit: " + str(total_limit),
         "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report)": (
             non_bank_within_limit if non_bank_total_limit is not None and non_bank_total_outstanding is not None else "N/A"
         ),
