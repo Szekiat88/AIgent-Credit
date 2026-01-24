@@ -65,8 +65,8 @@ def extract_last_updated_by_experian(text: str) -> Optional[str]:
     Accepts either DD MMM YYYY or DD/MM/YYYY style dates.
     """
     patterns = [
-        r"Last Updated by Experian\s*[:\-]?\s*([0-9]{1,2}\s+[A-Za-z]{3}\s+[0-9]{4})",
-        r"Last Updated by Experian\s*[:\-]?\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{4})",
+        r"Order Date:\s*[:\-]?\s*([0-9]{1,2}\s+[A-Za-z]{3}\s+[0-9]{4})",
+        r"Order Date:\s*[:\-]?\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{4})",
     ]
     for pattern in patterns:
         value = extract_first(pattern, text)
@@ -232,6 +232,7 @@ def extract_litigation_defendant_flags(text: str) -> dict[str, str]:
 def extract_fields(pdf_path: str) -> dict:
     """Extract required fields from PDF."""
     text = read_pdf_text(pdf_path)
+    print("text: ", text)
 
     incorporation_date = extract_date_after_label("Incorporation Date", text)
     incorporation_year = int(incorporation_date[-4:]) if incorporation_date else None

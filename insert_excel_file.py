@@ -404,6 +404,7 @@ if __name__ == "__main__":
     summary = merged.get("summary_report", {})
     issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
     cra_report_date = summary.get("Last_Updated_By_Experian")
+    print(f"Using CRA report date: {cra_report_date}")
 
     out = fill_knockout_matrix(excel_file, issuer_name, data, cra_report_date=cra_report_date)
     print("✅ File saved:", out)
