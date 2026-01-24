@@ -326,6 +326,7 @@ def fill_knockout_matrix(
 
     # 2) Issuer data column for Knock-Out Items: header 'Issuer' at M6
     issuer_data_col = find_issuer_data_column(ws)
+    ws.cell(7, issuer_data_col).value = issuer_name
 
     # 3) Build label row index from column D
     label_index = build_label_row_index(ws, LABEL_COL)
