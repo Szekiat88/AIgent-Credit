@@ -339,7 +339,7 @@ if __name__ == "__main__":
     parser.add_argument("--excel", help="Path to Knockout Matrix Template.xlsx")
     parser.add_argument("--merged-json", help="Path to merged JSON output")
     parser.add_argument("--pdf", help="Path to Experian PDF (opens picker if omitted)")
-    parser.add_argument("--issuer", default="YOUR ISSUER SDN BHD", help="Issuer name to fill in Excel")
+    parser.add_argument("--issuer", default=None, help="Issuer name to fill in Excel (defaults to Name Of Subject)")
     args = parser.parse_args()
 
     excel_file = resolve_excel_path(args.excel)
@@ -354,6 +354,8 @@ if __name__ == "__main__":
         merged = merge_reports(pdf_path)
 
     data = build_knockout_data(merged)
+    summary = merged.get("summary_report", {})
+    issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
 
-    out = fill_knockout_matrix(excel_file, args.issuer, data)
+    out = fill_knockout_matrix(excel_file, issuer_name, data)
     print("✅ File saved:", out)
