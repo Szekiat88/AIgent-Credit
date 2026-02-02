@@ -107,6 +107,18 @@ def extract_iscore(text: str) -> int | None:
     return int(v) if v else None
 
 
+def extract_iscore_second(text: str) -> int | None:
+    """
+    Match:
+      'i-SCORE 758'
+    Returns the second occurrence if present.
+    """
+    matches = re.findall(r"\bi-SCORE\b\s*([0-9]{3})\b", text, re.IGNORECASE | re.DOTALL)
+    if len(matches) < 2:
+        return None
+    return int(matches[1])
+
+
 def extract_fields(pdf_path: str) -> dict:
     text = read_pdf_text(pdf_path)
 
@@ -115,6 +127,7 @@ def extract_fields(pdf_path: str) -> dict:
 
     data = {
         "i_SCORE": extract_iscore(text),
+        "i_SCORE_2": extract_iscore_second(text),
         "Incorporation_Year": incorporation_year,
         "Status": extract_word_after_label("Status", text),
         "Private_Exempt_Company": extract_word_after_label("Private Exempt Company", text),

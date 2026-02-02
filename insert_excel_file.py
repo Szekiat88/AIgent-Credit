@@ -196,9 +196,11 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     non_bank_legal_status = _non_bank_legal_status(non_bank_records)
 
     credit_score = summary.get("i_SCORE")
+    credit_score_2 = summary.get("i_SCORE_2")
 
     return {
         "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(credit_score),
+        "Scoring by CRA Agency (Issuer's Credit Agency Score) 2": _format_number(credit_score_2),
         "Scoring by CRA Agency (Credit Score Equivalent)": score_to_equivalent(credit_score),
         "Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)": _format_number(
             summary.get("Incorporation_Year")
@@ -358,13 +360,21 @@ def fill_knockout_matrix(
     missing = []
     written = 0
 
+    secondary_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score) 2")
+    primary_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score)")
+
     for label, value in data_by_label.items():
-        row = label_index.get(_norm(label))
+        normalized_label = _norm(label)
+        row = label_index.get(normalized_label)
+        target_col = issuer_data_col
+        if not row and normalized_label == secondary_score_label:
+            row = label_index.get(primary_score_label)
+            target_col = issuer_data_col + 1
         if not row:
             missing.append(label)
             continue
 
-        ws.cell(row, issuer_data_col).value = _format_cell_value(value)
+        ws.cell(row, target_col).value = _format_cell_value(value)
         written += 1
 
     # 5) Save output
