@@ -2,9 +2,7 @@ import json
 
 # Import the shared extraction functions from load_file_version
 from load_file_version import (
-    extract_iscore,
-    extract_iscore_second,
-    extract_iscore_third,
+    extract_iscores_all,
     extract_date_after_label,
     extract_word_after_label,
     extract_int_after_label,
@@ -20,11 +18,14 @@ def extract_fields(pdf_path: str) -> dict:
 
     incorporation_date = extract_date_after_label("Incorporation Date", text)
     incorporation_year = int(incorporation_date[-4:]) if incorporation_date else None
+    
+    # Extract all i-SCORE values in one pass
+    credit_score, credit_score_2, credit_score_3 = extract_iscores_all(text)
 
     data = {
-        "i_SCORE": extract_iscore(text),
-        "i_SCORE_2": extract_iscore_second(text),
-        "i_SCORE_3": extract_iscore_third(text),
+        "i_SCORE": credit_score,
+        "i_SCORE_2": credit_score_2,
+        "i_SCORE_3": credit_score_3,
         "Incorporation_Year": incorporation_year,
         "Status": extract_word_after_label("Status", text),
         "Private_Exempt_Company": extract_word_after_label("Private Exempt Company", text),

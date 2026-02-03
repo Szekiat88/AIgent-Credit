@@ -95,38 +95,20 @@ def extract_name_of_subject(text: str) -> Optional[str]:
     return v.strip() if v else None
 
 
-def extract_iscore(text: str) -> Optional[int]:
+def extract_iscores_all(text: str) -> tuple[Optional[int], Optional[int], Optional[int]]:
     """
-    Match:
-      'i-SCORE 758'
-    Returns first occurrence.
-    """
-    v = extract_first(r"\bi-SCORE\b\s*([0-9]{3})\b", text)
-    return int(v) if v else None
-
-
-def extract_iscore_second(text: str) -> Optional[int]:
-    """
-    Match:
-      'i-SCORE 758'
-    Returns second occurrence if present.
+    Extract all i-SCORE occurrences from text.
+    
+    Match pattern: 'i-SCORE 758'
+    
+    Returns:
+        tuple: (first_score, second_score, third_score) where each is Optional[int]
     """
     matches = re.findall(r"\bi-SCORE\b\s*([0-9]{3})\b", text, re.IGNORECASE | re.DOTALL)
-    if len(matches) < 2:
-        return None
-    return int(matches[1])
-
-
-def extract_iscore_third(text: str) -> Optional[int]:
-    """
-    Match:
-      'i-SCORE 758'
-    Returns third occurrence if present.
-    """
-    matches = re.findall(r"\bi-SCORE\b\s*([0-9]{3})\b", text, re.IGNORECASE | re.DOTALL)
-    if len(matches) < 3:
-        return None
-    return int(matches[2])
+    
+    # Convert to integers and pad with None if less than 3 matches found
+    scores = [int(m) for m in matches] + [None, None, None]
+    return scores[0], scores[1], scores[2]
 
 
 def extract_legal_suits_total(text: str) -> Optional[int]:
@@ -253,13 +235,16 @@ def extract_fields(pdf_path: str) -> dict:
     incorporation_year = int(incorporation_date[-4:]) if incorporation_date else None
     borrower_outstanding, borrower_total_limit = extract_borrower_liabilities(text)
     litigation_flags = extract_litigation_defendant_flags(text)
+    
+    # Extract all i-SCORE values in one pass
+    credit_score, credit_score_2, credit_score_3 = extract_iscores_all(text)
 
     return {
         "pdf_file": pdf_path,
         "Name_Of_Subject": extract_name_of_subject(text),
-        "i_SCORE": extract_iscore(text),
-        "i_SCORE_2": extract_iscore_second(text),
-        "i_SCORE_3": extract_iscore_third(text),
+        "i_SCORE": credit_score,
+        "i_SCORE_2": credit_score_2,
+        "i_SCORE_3": credit_score_3,
         "Incorporation_Year": incorporation_year,
         "Status": extract_word_after_label("Status", text),
         "Private_Exempt_Company": extract_word_after_label("Private Exempt Company", text),
