@@ -369,7 +369,7 @@ def fill_knockout_matrix(
         target_col = issuer_data_col
         if not row and normalized_label == secondary_score_label:
             row = label_index.get(primary_score_label)
-            target_col = issuer_data_col + 1
+            target_col = issuer_data_col + 2
         if not row:
             missing.append(label)
             continue

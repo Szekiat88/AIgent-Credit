@@ -65,8 +65,8 @@ def extract_last_updated_by_experian(text: str) -> Optional[str]:
     Accepts either DD MMM YYYY or DD/MM/YYYY style dates.
     """
     patterns = [
-        r"Order Date:\s*[:\-]?\s*([0-9]{1,2}\s+[A-Za-z]{3}\s+[0-9]{4})",
-        r"Order Date:\s*[:\-]?\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{4})",
+        r"Order Date: \s*[:\-]?\s*([0-9]{1,2}\s+[A-Za-z]{3}\s+[0-9]{4})",
+        r"Order Date: \s*[:\-]?\s*([0-9]{4}-[0-9]{1,2}-[0-9]{1,2})",
     ]
     for pattern in patterns:
         value = extract_first(pattern, text)
