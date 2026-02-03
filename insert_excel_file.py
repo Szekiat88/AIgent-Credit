@@ -197,10 +197,12 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
 
     credit_score = summary.get("i_SCORE")
     credit_score_2 = summary.get("i_SCORE_2")
+    credit_score_3 = summary.get("i_SCORE_3")
 
     return {
         "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(credit_score),
         "Scoring by CRA Agency (Issuer's Credit Agency Score) 2": _format_number(credit_score_2),
+        "Scoring by CRA Agency (Issuer's Credit Agency Score) 3": _format_number(credit_score_3),
         "Scoring by CRA Agency (Credit Score Equivalent)": score_to_equivalent(credit_score),
         "Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)": _format_number(
             summary.get("Incorporation_Year")
@@ -360,16 +362,17 @@ def fill_knockout_matrix(
     missing = []
     written = 0
 
-    secondary_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score) 2")
     primary_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score)")
+    secondary_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score) 2")
+    third_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score) 3")
 
     for label, value in data_by_label.items():
         normalized_label = _norm(label)
         row = label_index.get(normalized_label)
         target_col = issuer_data_col
-        if not row and normalized_label == secondary_score_label:
+        if not row and normalized_label in {secondary_score_label, third_score_label}:
             row = label_index.get(primary_score_label)
-            target_col = issuer_data_col + 2
+            target_col = issuer_data_col + (1 if normalized_label == secondary_score_label else 2)
         if not row:
             missing.append(label)
             continue
