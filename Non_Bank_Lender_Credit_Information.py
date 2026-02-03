@@ -1,12 +1,10 @@
 import re
 from typing import List, Dict, Any, Optional, Tuple
-import pdfplumber
-import tkinter as tk
-from tkinter import filedialog
+
+from pdf_utils import pick_pdf_file, extract_section_lines, RE_DATE
 
 RE_TOTAL_LINE = re.compile(r"^\s*TOTAL\s+[\d,]+\.\d{2}\s+TOTAL\s+[\d,]+\.\d{2}\s*$", re.IGNORECASE)
 RE_OUTSTANDING = re.compile(r"\bOUTSTANDING\s+CREDIT\b", re.IGNORECASE)
-RE_DATE = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 RE_INT_1_2 = re.compile(r"^\d{1,2}$")
 
 # Expand this list when you see more markers in PDFs
@@ -16,21 +14,6 @@ MONTHS = [
     ("Jan","J"), ("Feb","F"), ("Mar","M"), ("Apr","A"), ("May","M"), ("Jun","J"),
     ("Jul","J"), ("Aug","A"), ("Sep","S"), ("Oct","O"), ("Nov","N"), ("Dec","D"),
 ]
-
-def pick_pdf_file() -> Optional[str]:
-    """Open a file picker to select a PDF."""
-    root = tk.Tk()
-    root.withdraw()
-    root.update()  # prevent some mac focus issues
-
-    file_path = filedialog.askopenfilename(
-        title="Select Experian PDF",
-        filetypes=[("PDF files", "*.pdf")],
-    )
-
-    root.destroy()
-    return file_path if file_path else None
-
 
 # =============================
 # CONSTANTS
@@ -251,33 +234,8 @@ def parse_outstanding_with_stats(lines: List[str]) -> Dict[str, Any]:
         "totals": totals
     }
 
-def extract_section_lines(pdf_path: str) -> List[str]:
-    lines_between: List[str] = []
-    in_section = False
-
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            for line in text.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-
-                if not in_section and START_MARKER.lower() in line.lower():
-                    in_section = True
-                    continue
-
-                if in_section and END_MARKER.lower() in line.lower():
-                    return lines_between
-
-                if in_section:
-                    lines_between.append(line)
-
-    return lines_between
-
-
 def extract_non_bank_lender_credit_information(pdf_path: str) -> Dict[str, Any]:
-    section_lines = extract_section_lines(pdf_path)
+    section_lines = extract_section_lines(pdf_path, START_MARKER, END_MARKER)
     result: Dict[str, Any] = {
         "source_pdf": pdf_path,
         "section": {"start_marker": START_MARKER, "end_marker": END_MARKER},

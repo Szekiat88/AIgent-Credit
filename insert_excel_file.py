@@ -4,15 +4,14 @@ import argparse
 import json
 import os
 import re
-import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
 from typing import Any, Dict, Optional
 
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
 
 from merged_credit_report import merge_reports, resolve_pdf_path
+from pdf_utils import pick_excel_file
 
 SHEET_NAME = "Knock-Out"
 LABEL_COL = 4  # D
@@ -29,20 +28,6 @@ SCORE_RANGE_EQUIVALENTS = [
     (421, 460, "F"),
     (0, 420, "F"),
 ]
-
-
-def pick_excel_file() -> Optional[str]:
-    root = tk.Tk()
-    root.withdraw()
-    root.update()
-
-    path = filedialog.askopenfilename(
-        title="Select Knockout Matrix Excel File",
-        filetypes=[("Excel files", "*.xlsx")],
-    )
-
-    root.destroy()
-    return path if path else None
 
 
 def _norm(s: str) -> str:
@@ -372,7 +357,7 @@ def fill_knockout_matrix(
         target_col = issuer_data_col
         if not row and normalized_label in {secondary_score_label, third_score_label}:
             row = label_index.get(primary_score_label)
-            target_col = issuer_data_col + (1 if normalized_label == secondary_score_label else 2)
+            target_col = issuer_data_col + (2 if normalized_label == secondary_score_label else 4)
         if not row:
             missing.append(label)
             continue

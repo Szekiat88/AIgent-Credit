@@ -2,31 +2,13 @@ from __future__ import annotations
 
 import json
 import re
-import tkinter as tk
-from tkinter import filedialog
 from typing import Optional, List, Dict, Any
-from dataclasses import dataclass, asdict
-from decimal import Decimal, InvalidOperation
+from dataclasses import dataclass
+from decimal import Decimal
 
 import pdfplumber
 
-
-# =============================
-# FILE PICKER (YOUR FUNCTION)
-# =============================
-def pick_pdf_file() -> Optional[str]:
-    """Open a file picker to select a PDF."""
-    root = tk.Tk()
-    root.withdraw()
-    root.update()  # prevent some mac focus issues
-
-    file_path = filedialog.askopenfilename(
-        title="Select Experian PDF",
-        filetypes=[("PDF files", "*.pdf")],
-    )
-
-    root.destroy()
-    return file_path if file_path else None
+from pdf_utils import pick_pdf_file, parse_decimal, extract_section_lines, RE_MONEY
 
 
 # =============================
@@ -37,7 +19,6 @@ END_MARKER = "CREDIT APPLICATION"
 
 RE_RECORD_START = re.compile(r"^\s*(\d{1,4})\s+")
 RE_DATE = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
-RE_MONEY = re.compile(r"\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b")
 RE_TERM = re.compile(r"\b(MTH|BUL|REV|IDF|IRR)\b")
 RE_DIGIT_TOKEN = re.compile(r"^\d+$")
 
@@ -63,13 +44,6 @@ class BankingAccountRecord:
     raw_text: str
 
 
-def _parse_decimal(value: str) -> Optional[Decimal]:
-    try:
-        return Decimal(value.replace(",", ""))
-    except (InvalidOperation, AttributeError):
-        return None
-
-
 def _extract_amount_before_date(line: str) -> Optional[Decimal]:
     date_match = RE_DATE.search(line)
     if not date_match:
@@ -78,7 +52,7 @@ def _extract_amount_before_date(line: str) -> Optional[Decimal]:
     money_matches = list(RE_MONEY.finditer(before_date))
     if not money_matches:
         return None
-    return _parse_decimal(money_matches[-1].group(0))
+    return parse_decimal(money_matches[-1].group(0))
 
 
 def _extract_numbers_after_date(line: str) -> List[Decimal]:
@@ -89,7 +63,7 @@ def _extract_numbers_after_date(line: str) -> List[Decimal]:
     money_matches = list(RE_MONEY.finditer(after_date))
     values: List[Decimal] = []
     for match in money_matches:
-        parsed = _parse_decimal(match.group(0))
+        parsed = parse_decimal(match.group(0))
         if parsed is not None:
             values.append(parsed)
     return values
@@ -218,8 +192,8 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
     outstanding_match = pattern_outstanding.search(text)
     limit_match = pattern_limit.search(text)
 
-    outstanding_value = _parse_decimal(outstanding_match.group(1)) if outstanding_match else None
-    limit_value = _parse_decimal(limit_match.group(1)) if limit_match else None
+    outstanding_value = parse_decimal(outstanding_match.group(1)) if outstanding_match else None
+    limit_value = parse_decimal(limit_match.group(1)) if limit_match else None
 
     return {
         "total_outstanding_balance": float(outstanding_value) if outstanding_value is not None else None,
@@ -228,35 +202,7 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
 
 
 # =============================
-# STEP 1: EXTRACT LINES BETWEEN HEADERS
-# =============================
-def extract_section_lines(pdf_path: str) -> List[str]:
-    lines_between: List[str] = []
-    in_section = False
-
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            for line in text.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-
-                if not in_section and START_MARKER.lower() in line.lower():
-                    in_section = True
-                    continue
-
-                if in_section and END_MARKER.lower() in line.lower():
-                    return lines_between
-
-                if in_section:
-                    lines_between.append(line)
-
-    return lines_between
-
-
-# =============================
-# STEP 2: SPLIT USING NUMBER DELIMITER
+# STEP 1: SPLIT USING NUMBER DELIMITER
 # =============================
 def split_into_records(lines: List[str]) -> List[BankingAccountRecord]:
     records: List[BankingAccountRecord] = []
@@ -294,7 +240,7 @@ def split_into_records(lines: List[str]) -> List[BankingAccountRecord]:
 # MAIN
 # =============================
 def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
-    section_lines = extract_section_lines(pdf_path)
+    section_lines = extract_section_lines(pdf_path, START_MARKER, END_MARKER)
     records = split_into_records(section_lines)
     total_balances = extract_total_balances(pdf_path)
 

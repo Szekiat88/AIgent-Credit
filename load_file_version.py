@@ -3,12 +3,9 @@ import json
 from pathlib import Path
 from typing import Optional
 
-import tkinter as tk
-from tkinter import filedialog
-
 import pdfplumber
 
-RE_MONEY = re.compile(r"\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b")
+from pdf_utils import pick_pdf_file, parse_money, RE_MONEY
 
 
 def _norm(s: str) -> str:
@@ -96,12 +93,6 @@ def extract_name_of_subject(text: str) -> Optional[str]:
     """
     v = extract_first(r"Name Of Subject\s*[:\-]?\s*([^\n]+)", text)
     return v.strip() if v else None
-
-
-def parse_money(value: str) -> Optional[float]:
-    if not value:
-        return None
-    return float(value.replace(",", ""))
 
 
 def extract_iscore(text: str) -> Optional[int]:
@@ -294,21 +285,6 @@ def extract_fields(pdf_path: str) -> dict:
         "Trade_Credit_Reference_Amount_Due_RM": extract_trade_credit_amount_due(text),
         **litigation_flags,
     }
-
-
-def pick_pdf_file() -> Optional[str]:
-    """Open a file picker to select a PDF."""
-    root = tk.Tk()
-    root.withdraw()
-    root.update()  # prevent some mac focus issues
-
-    file_path = filedialog.askopenfilename(
-        title="Select Experian PDF",
-        filetypes=[("PDF files", "*.pdf")],
-    )
-
-    root.destroy()
-    return file_path if file_path else None
 
 
 if __name__ == "__main__":
