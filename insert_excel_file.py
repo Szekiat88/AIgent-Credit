@@ -238,7 +238,11 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         )
         data[f"Legal Case - Status (per primary CRA report){suffix}"] = legal_case_status
     
-    add_multi_subject_data("Trade / Credit Reference (per primary CRA report)", "Trade_Credit_Reference_Amount_Due_RM", _format_number)
+    add_multi_subject_data(
+        "Trade / Credit Reference (per primary CRA report)",
+        "Trade_Credit_Amount_Due_Over_10k_Count",
+        _format_number,
+    )
     add_multi_subject_data("Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)", "Total_Enquiries_Last_12_months", _format_number)
     add_multi_subject_data("Special Attention Account (per primary CRA report)", "Special_Attention_Account", _format_number)
     add_multi_subject_data("Summary of Total Liabilities (Outstanding) (per primary CRA report)", "Borrower_Outstanding_RM", _format_number)
