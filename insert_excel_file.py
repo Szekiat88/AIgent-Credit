@@ -161,7 +161,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     totals = detailed.get("totals", {})
     non_bank_totals = non_bank.get("totals", {}) if isinstance(non_bank.get("totals", {}), dict) else {}
     non_bank_stats = non_bank.get("stats_totals", {}) if isinstance(non_bank.get("stats_totals", {}), dict) else {}
-    non_bank_records = non_bank.get("records", []) if isinstance(non_bank.get("records", []), list) else []
+    non_bank_records = non_bank.get("records", []) if isinstance(non_bank.get("records", []), list) else {}
 
     total_limit = totals.get("total_limit") or summary.get("Borrower_Total_Limit_RM")
     total_outstanding = totals.get("total_outstanding_balance") or summary.get("Borrower_Outstanding_RM")
@@ -180,69 +180,95 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     non_bank_conduct_count = _non_bank_conduct_count(non_bank_stats)
     non_bank_legal_status = _non_bank_legal_status(non_bank_records)
 
-    credit_score = summary.get("i_SCORE")
-    credit_score_2 = summary.get("i_SCORE_2")
-    credit_score_3 = summary.get("i_SCORE_3")
-
-    return {
-        "Scoring by CRA Agency (Issuer's Credit Agency Score)": _format_number(credit_score),
-        "Scoring by CRA Agency (Issuer's Credit Agency Score) 2": _format_number(credit_score_2),
-        "Scoring by CRA Agency (Issuer's Credit Agency Score) 3": _format_number(credit_score_3),
-        "Scoring by CRA Agency (Credit Score Equivalent)": score_to_equivalent(credit_score),
-        "Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)": _format_number(
-            summary.get("Incorporation_Year")
-        ),
-        "Company Status (Existing Only)": summary.get("Status"),
-        "Exempt Private Company": summary.get("Private_Exempt_Company"),
-        "Winding Up / Bankruptcy Proceedings Record": _format_number(summary.get("Winding_Up_Record")),
-        "Credit Applications Approved for Last 12 months (per primary CRA report)": _format_number(
-            summary.get("Credit_Applications_Approved_Last_12_months")
-        ),
-        "Credit Applications Pending (per primary CRA report)": _format_number(
-            summary.get("Credit_Applications_Pending")
-        ),
-        "Legal Action taken (from Banking) (per primary CRA report)": _format_number(
-            summary.get("Legal_Action_taken_from_Banking")
-        ),
-        "Existing No. of Facility (from Banking) (per primary CRA report)": _format_number(
-            summary.get("Existing_No_of_Facility_from_Banking")
-        ),
-        "Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)": _format_number(
-            summary.get("Legal_Suits")
-        ),
-        "Legal Case - Status (per primary CRA report)": _format_number(
-            summary.get("Legal_Suits_Subject_As_Defendant_Defendant_Name") + summary.get("Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name") + summary.get("Case_Withdrawn_Settled_Defendant_Name") 
-        ),
-        "Trade / Credit Reference (per primary CRA report)": _format_number(
-            summary.get("Trade_Credit_Reference_Amount_Due_RM")), 
-        "Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)": _format_number(
-            summary.get("Total_Enquiries_Last_12_months")
-        ),
-        "Special Attention Account (per primary CRA report)": _format_number(
-            summary.get("Special_Attention_Account")
-        ),
-        "Summary of Total Liabilities (Outstanding) (per primary CRA report)": _format_number(
-            summary.get("Borrower_Outstanding_RM")
-        ),
-        "Summary of Total Liabilities (Total Limit) (per primary CRA report)": _format_number(
-            summary.get("Borrower_Total_Limit_RM")
-        ),
-        "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)": _compute_overdraft_compliance(
-            analysis
-        ),
-        "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)": total_banking_within_limit + ", outstanding: " + str(total_outstanding) + ", limit: " + str(total_limit),
-        "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report)": (
-            non_bank_within_limit if non_bank_total_limit is not None and non_bank_total_outstanding is not None else "N/A"
-        ),
-        "CCRIS Loan Account - Conduct Count (per primary CRA report)": analysis.get("digit_counts_totals"),
-        "CCRIS Loan Account - Legal Status (per primary CRA report)": analysis.get("Bank_LOD"),
-        "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)": non_bank_stats
-        if non_bank_stats
-        else _format_number(non_bank_conduct_count),
-        "Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report)": non_bank_legal_status,
-        "Total Limit": _format_number(total_limit),
-        "Total Outstanding Balance": _format_number(total_outstanding),
-    }
+    # Detect how many subjects are in the data (dynamic detection)
+    num_subjects = 1
+    while summary.get(f"Name_Of_Subject_{num_subjects + 1}") is not None:
+        num_subjects += 1
+    
+    print(f"✅ Detected {num_subjects} subject(s) in merged data")
+    
+    # Build data dictionary
+    data = {}
+    
+    # Helper function to get field value for subject i (1-indexed)
+    def get_subject_field(field_name: str, subject_idx: int):
+        if subject_idx == 1:
+            return summary.get(field_name)
+        else:
+            return summary.get(f"{field_name}_{subject_idx}")
+    
+    # Helper function to add data for all subjects dynamically
+    def add_multi_subject_data(label: str, field_name: str, format_func=None):
+        for i in range(1, num_subjects + 1):
+            suffix = f" {i}" if i > 1 else ""
+            value = get_subject_field(field_name, i)
+            if format_func:
+                value = format_func(value)
+            data[f"{label}{suffix}"] = value
+    
+    # Extract and add credit scores with equivalents
+    for i in range(1, num_subjects + 1):
+        suffix = f" {i}" if i > 1 else ""
+        score = get_subject_field("i_SCORE", i)
+        data[f"Scoring by CRA Agency (Issuer's Credit Agency Score){suffix}"] = _format_number(score)
+        data[f"Scoring by CRA Agency (Credit Score Equivalent){suffix}"] = score_to_equivalent(score)
+    
+    # Single-column fields (same for all subjects)
+    data["Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)"] = _format_number(
+        summary.get("Incorporation_Year")
+    )
+    data["Company Status (Existing Only)"] = summary.get("Status")
+    data["Exempt Private Company"] = summary.get("Private_Exempt_Company")
+    
+    # Multi-subject fields (dynamic number of subjects)
+    add_multi_subject_data("Winding Up / Bankruptcy Proceedings Record", "Winding_Up_Record", _format_number)
+    add_multi_subject_data("Credit Applications Approved for Last 12 months (per primary CRA report)", "Credit_Applications_Approved_Last_12_months", _format_number)
+    add_multi_subject_data("Credit Applications Pending (per primary CRA report)", "Credit_Applications_Pending", _format_number)
+    add_multi_subject_data("Legal Action taken (from Banking) (per primary CRA report)", "Legal_Action_taken_from_Banking", _format_number)
+    add_multi_subject_data("Existing No. of Facility (from Banking) (per primary CRA report)", "Existing_No_of_Facility_from_Banking", _format_number)
+    add_multi_subject_data("Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)", "Legal_Suits", _format_number)
+    
+    # Legal Case - Status: Combine the litigation flags for each subject
+    for i in range(1, num_subjects + 1):
+        suffix = f" {i}" if i > 1 else ""
+        legal_case_status = (
+            str(get_subject_field("Legal_Suits_Subject_As_Defendant_Defendant_Name", i) or "No") + ", " +
+            str(get_subject_field("Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name", i) or "No") + ", " +
+            str(get_subject_field("Case_Withdrawn_Settled_Defendant_Name", i) or "No")
+        )
+        data[f"Legal Case - Status (per primary CRA report){suffix}"] = legal_case_status
+    
+    add_multi_subject_data("Trade / Credit Reference (per primary CRA report)", "Trade_Credit_Reference_Amount_Due_RM", _format_number)
+    add_multi_subject_data("Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)", "Total_Enquiries_Last_12_months", _format_number)
+    add_multi_subject_data("Special Attention Account (per primary CRA report)", "Special_Attention_Account", _format_number)
+    add_multi_subject_data("Summary of Total Liabilities (Outstanding) (per primary CRA report)", "Borrower_Outstanding_RM", _format_number)
+    add_multi_subject_data("Summary of Total Liabilities (Total Limit) (per primary CRA report)", "Borrower_Total_Limit_RM", _format_number)
+    
+    # Company-level data (same for all subjects since these are aggregated at company level)
+    overdraft_compliance = _compute_overdraft_compliance(analysis)
+    banking_facilities_status = total_banking_within_limit + ", outstanding: " + str(total_outstanding) + ", limit: " + str(total_limit)
+    non_bank_facilities_status = (non_bank_within_limit if non_bank_total_limit is not None and non_bank_total_outstanding is not None else "N/A")
+    ccris_conduct_count = analysis.get("digit_counts_totals")
+    ccris_legal_status = analysis.get("Bank_LOD")
+    non_bank_conduct = non_bank_stats if non_bank_stats else _format_number(non_bank_conduct_count)
+    non_bank_legal = non_bank_legal_status
+    
+    # Repeat company-level data for all subjects
+    for i in range(1, num_subjects + 1):
+        suffix = f" {i}" if i > 1 else ""
+        data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
+        data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_facilities_status
+        data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_facilities_status
+        data[f"CCRIS Loan Account - Conduct Count (per primary CRA report){suffix}"] = ccris_conduct_count
+        data[f"CCRIS Loan Account - Legal Status (per primary CRA report){suffix}"] = ccris_legal_status
+        data[f"Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report){suffix}"] = non_bank_conduct
+        data[f"Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report){suffix}"] = non_bank_legal
+    
+    # Single-column fields at the end
+    data["Total Limit"] = _format_number(total_limit)
+    data["Total Outstanding Balance"] = _format_number(total_outstanding)
+    
+    return data
 
 
 def find_issuer_data_column(ws: Worksheet) -> int:
@@ -316,6 +342,7 @@ def fill_knockout_matrix(
     issuer_name: str,
     data_by_label: Dict[str, Any],
     cra_report_date: Optional[str] = None,
+    all_subject_names: Optional[list[str]] = None,
 ) -> str:
     wb = openpyxl.load_workbook(file_path)
     if SHEET_NAME not in wb.sheetnames:
@@ -338,26 +365,68 @@ def fill_knockout_matrix(
 
     # 2) Issuer data column for Knock-Out Items: header 'Issuer' at M6
     issuer_data_col = find_issuer_data_column(ws)
-    ws.cell(7, issuer_data_col).value = issuer_name
+    
+    # Row 7: Insert all Name Of Subject values dynamically
+    # Column L has label "Name", data goes in M, O, Q, S, U, ...  (offset by 2 for each subject)
+    if all_subject_names is None:
+        all_subject_names = [issuer_name]
+    
+    for i, subject_name in enumerate(all_subject_names):
+        if subject_name:
+            col_offset = i * 2  # M (0), O (2), Q (4), S (6), U (8), ...
+            ws.cell(7, issuer_data_col + col_offset).value = subject_name
+            print(f"✅ Inserted Name Of Subject {i+1}: '{subject_name}' at Row 7, Column {openpyxl.utils.get_column_letter(issuer_data_col + col_offset)}")
 
     # 3) Build label row index from column D
     label_index = build_label_row_index(ws, LABEL_COL)
 
-    # 4) Write values into Issuer data column (M)
+    # 4) Write values into Issuer data column (M, O, Q for multi-column fields)
     missing = []
     written = 0
-
-    primary_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score)")
-    secondary_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score) 2")
-    third_score_label = _norm("Scoring by CRA Agency (Issuer's Credit Agency Score) 3")
+    
+    # Multi-column patterns: maps label base to column offsets [0, 2, 4] for suffixes ["", " 2", " 3"]
+    # These fields will be inserted into three cells (e.g., M, O, Q columns)
+    multi_col_patterns = [
+        "Scoring by CRA Agency (Issuer's Credit Agency Score)",
+        "Scoring by CRA Agency (Credit Score Equivalent)",
+        "Winding Up / Bankruptcy Proceedings Record",
+        "Credit Applications Approved for Last 12 months (per primary CRA report)",
+        "Credit Applications Pending (per primary CRA report)",
+        "Legal Action taken (from Banking) (per primary CRA report)",
+        "Existing No. of Facility (from Banking) (per primary CRA report)",
+        "Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)",
+        "Legal Case - Status (per primary CRA report)",
+        "Trade / Credit Reference (per primary CRA report)",
+        "Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)",
+        "Special Attention Account (per primary CRA report)",
+        "Summary of Total Liabilities (Outstanding) (per primary CRA report)",
+        "Summary of Total Liabilities (Total Limit) (per primary CRA report)",
+        "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)",
+        "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)",
+        "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report)",
+        "CCRIS Loan Account - Conduct Count (per primary CRA report)",
+        "CCRIS Loan Account - Legal Status (per primary CRA report)",
+        "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)",
+        "Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report)",
+    ]
 
     for label, value in data_by_label.items():
         normalized_label = _norm(label)
         row = label_index.get(normalized_label)
         target_col = issuer_data_col
-        if not row and normalized_label in {secondary_score_label, third_score_label}:
-            row = label_index.get(primary_score_label)
-            target_col = issuer_data_col + (2 if normalized_label == secondary_score_label else 4)
+        
+        # Check if this is a multi-column field (with " 2", " 3", " 4", ... suffix)
+        if not row:
+            for pattern in multi_col_patterns:
+                # Check for numbered suffixes dynamically
+                for i in range(2, 20):  # Support up to 20 subjects
+                    if normalized_label == _norm(pattern + f" {i}"):
+                        row = label_index.get(_norm(pattern))
+                        target_col = issuer_data_col + ((i - 1) * 2)  # Offset by 2 for each subject
+                        break
+                if row:
+                    break
+        
         if not row:
             missing.append(label)
             continue
@@ -370,7 +439,7 @@ def fill_knockout_matrix(
     output_path = f"{base}_FILLED{ext}"
     wb.save(output_path)
 
-    print(f"✅ Written {written} cells into Issuer column ({openpyxl.utils.get_column_letter(issuer_data_col)}).")
+    print(f"✅ Written {written} cells into Issuer columns (M, O, Q - starting at {openpyxl.utils.get_column_letter(issuer_data_col)}).")
     if missing:
         print("\n⚠️ Labels not found (not written):")
         for m in missing:
@@ -404,5 +473,24 @@ if __name__ == "__main__":
     cra_report_date = summary.get("Last_Updated_By_Experian")
     print(f"Using CRA report date: {cra_report_date}")
 
-    out = fill_knockout_matrix(excel_file, issuer_name, data, cra_report_date=cra_report_date)
+    # Collect all subject names dynamically
+    all_subject_names = [issuer_name]
+    i = 2
+    while True:
+        subject_key = f"Name_Of_Subject_{i}" if i > 1 else "Name_Of_Subject"
+        subject_name = summary.get(subject_key)
+        if subject_name is None:
+            break
+        all_subject_names.append(subject_name)
+        i += 1
+    
+    print(f"✅ Found {len(all_subject_names)} subject(s) to insert into Excel")
+
+    out = fill_knockout_matrix(
+        excel_file, 
+        issuer_name, 
+        data, 
+        cra_report_date=cra_report_date,
+        all_subject_names=all_subject_names,
+    )
     print("✅ File saved:", out)

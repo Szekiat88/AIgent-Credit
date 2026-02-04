@@ -136,9 +136,9 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                 if value is not None
             ]
         for line in record.raw_lines:
-            matched_keyword = next((kw for kw in ACCOUNT_KEYWORDS if kw in line), None)
-            if not matched_keyword:
-                continue
+            # matched_keyword = next((kw for kw in ACCOUNT_KEYWORDS if kw in line), None)
+            # if not matched_keyword:
+            #     continue
             
             amount_before_date = _extract_amount_before_date(line)
             if amount_before_date is not None:

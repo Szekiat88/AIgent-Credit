@@ -95,20 +95,97 @@ def extract_name_of_subject(text: str) -> Optional[str]:
     return v.strip() if v else None
 
 
-def extract_iscores_all(text: str) -> tuple[Optional[int], Optional[int], Optional[int]]:
+def extract_name_of_subject_all(text: str) -> list[Optional[str]]:
     """
-    Extract all i-SCORE occurrences from text.
-    
-    Match pattern: 'i-SCORE 758'
-    
-    Returns:
-        tuple: (first_score, second_score, third_score) where each is Optional[int]
+    Extract the FIRST 'Name Of Subject' from each 'PARTICULARS OF THE SUBJECT PROVIDED BY YOU' section.
+    Returns ALL names found (dynamic length).
     """
+    
+    print("\n" + "="*80)
+    print("DEBUG: Name Of Subject Extraction")
+    print("="*80)
+    
+    # Find all occurrences of the section header
+    section_pattern = r"PARTICULARS OF THE SUBJECT PROVIDED BY YOU"
+    section_positions = [(m.start(), m.end()) for m in re.finditer(section_pattern, text, re.IGNORECASE)]
+    
+    print(f"🔍 Found {len(section_positions)} section(s) with header 'PARTICULARS OF THE SUBJECT PROVIDED BY YOU'")
+    
+    names = []
+    
+    if not section_positions:
+        print("⚠️  No sections found! Falling back to searching entire document...")
+        # Fallback: get ALL from entire document
+        all_matches = re.findall(r"Name Of Subject\s*[:\-]?\s*([^\n]+)", text, re.IGNORECASE)
+        names = [m.strip() for m in all_matches if m.strip()]
+    else:
+        # For each section, extract the FIRST "Name Of Subject" only
+        for i, (start_pos, end_pos) in enumerate(section_positions, 1):
+            # Define section boundary: from this header to the next section or end of document
+            if i < len(section_positions):
+                next_start = section_positions[i][0]
+                section_text = text[end_pos:next_start]
+            else:
+                section_text = text[end_pos:]
+            
+            print(f"\n📋 Section {i}:")
+            print(f"   Position: {start_pos} - {end_pos}")
+            print(f"   Section length: {len(section_text)} characters")
+            print(f"   First 300 chars: {section_text[:300].strip()}")
+            
+            # Extract ALL "Name Of Subject" in this section
+            section_matches = re.findall(r"Name Of Subject\s*[:\-]?\s*([^\n]+)", section_text, re.IGNORECASE)
+            
+            if section_matches:
+                # Take only the FIRST match from this section
+                first_match = section_matches[0].strip()
+                print(f"   ✅ Found {len(section_matches)} match(es), taking FIRST: '{first_match}'")
+                if len(section_matches) > 1:
+                    print(f"   ⚠️  Ignoring {len(section_matches) - 1} duplicate(s) in same section: {section_matches[1:]}")
+                names.append(first_match)
+            else:
+                print(f"   ⚠️  No 'Name Of Subject' found in this section")
+    
+    # Ensure we have at least one element
+    if not names:
+        names = [None]
+    
+    print(f"\n✅ Final extracted Name Of Subject values: {names}")
+    print("="*80 + "\n")
+    
+    return names
+
+
+def extract_iscores_all(text: str) -> list[Optional[int]]:
+    """Extract ALL i-SCORE occurrences from text (pattern: 'i-SCORE 758')."""
     matches = re.findall(r"\bi-SCORE\b\s*([0-9]{3})\b", text, re.IGNORECASE | re.DOTALL)
-    
-    # Convert to integers and pad with None if less than 3 matches found
-    scores = [int(m) for m in matches] + [None, None, None]
-    return scores[0], scores[1], scores[2]
+    scores = [int(m) for m in matches] if matches else [None]
+    return scores
+
+
+def extract_int_after_label_all(label: str, text: str) -> list[Optional[int]]:
+    """
+    Extract ALL integer occurrences after a label from each section.
+    Returns all values found (dynamic length).
+    """
+    label_esc = re.escape(label)
+    pattern = rf"{label_esc}\s*[:\-]?\s*([0-9]+)"
+    matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
+    values = [int(m) for m in matches] if matches else [None]
+    return values
+
+
+def extract_legal_suits_all(text: str) -> list[Optional[int]]:
+    """
+    Extract ALL Legal Suits occurrences.
+    Returns all values found (dynamic length).
+    """
+    matches = re.findall(r"Legal Suits\s*[:\-]?\s*([0-9]+)", text, re.IGNORECASE | re.DOTALL)
+    if not matches:
+        # Fallback: litigation section 'LEGAL SUITS ... Total: 0'
+        matches = re.findall(r"LEGAL\s+SUITS.*?Total\s*:\s*([0-9]+)", text, re.IGNORECASE | re.DOTALL)
+    values = [int(m) for m in matches] if matches else [None]
+    return values
 
 
 def extract_legal_suits_total(text: str) -> Optional[int]:
@@ -132,6 +209,7 @@ def extract_section_after_header(header: str, text: str) -> Optional[str]:
 
 
 def extract_borrower_liabilities(text: str) -> tuple[Optional[float], Optional[float]]:
+    """Extract first borrower liabilities (Outstanding and Total Limit)."""
     section = extract_section_after_header("SUMMARY OF POTENTIAL & CURRENT LIABILITIES", text)
     if not section:
         return None, None
@@ -157,7 +235,71 @@ def extract_borrower_liabilities(text: str) -> tuple[Optional[float], Optional[f
     return None, None
 
 
+def extract_borrower_liabilities_all(text: str) -> list[tuple[Optional[float], Optional[float]]]:
+    """
+    Extract ALL borrower liabilities occurrences.
+    Returns list of tuples: [(outstanding_1, limit_1), (outstanding_2, limit_2), ...]
+    Dynamic length based on how many are found.
+    """
+    # Find all sections with "SUMMARY OF POTENTIAL & CURRENT LIABILITIES"
+    section_pattern = r"SUMMARY OF POTENTIAL & CURRENT LIABILITIES.*?(?=\n[A-Z][A-Z &/\-]{5,}\n|$)"
+    sections = re.findall(section_pattern, text, re.IGNORECASE | re.DOTALL)
+    
+    all_liabilities = []
+    
+    if not sections:
+        # Fallback: try to find all "Borrower" entries in the entire text
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        header_positions = [
+            idx for idx, line in enumerate(lines) 
+            if "Outstanding" in line and "Total Limit" in line
+        ]
+        
+        for header_idx in header_positions:
+            search_lines = lines[header_idx + 1 : header_idx + 50]  # Look ahead up to 50 lines
+            
+            for idx, line in enumerate(search_lines):
+                if re.search(r"\bBorrower\b", line, re.IGNORECASE):
+                    combined = line
+                    if idx + 1 < len(search_lines):
+                        combined = f"{combined} {search_lines[idx + 1]}"
+                    amounts = [m.group(0) for m in RE_MONEY.finditer(combined)]
+                    if len(amounts) >= 2:
+                        all_liabilities.append((parse_money(amounts[0]), parse_money(amounts[1])))
+                        break  # Only take first "Borrower" per header
+    else:
+        # Process each section
+        for section in sections:
+            lines = [line.strip() for line in section.splitlines() if line.strip()]
+            header_idx = next(
+                (idx for idx, line in enumerate(lines) if "Outstanding" in line and "Total Limit" in line),
+                None,
+            )
+            
+            if header_idx is None:
+                search_lines = lines
+            else:
+                search_lines = lines[header_idx + 1 :]
+            
+            for idx, line in enumerate(search_lines):
+                if re.search(r"\bBorrower\b", line, re.IGNORECASE):
+                    combined = line
+                    if idx + 1 < len(search_lines):
+                        combined = f"{combined} {search_lines[idx + 1]}"
+                    amounts = [m.group(0) for m in RE_MONEY.finditer(combined)]
+                    if len(amounts) >= 2:
+                        all_liabilities.append((parse_money(amounts[0]), parse_money(amounts[1])))
+                        break  # Only take first "Borrower" per section
+    
+    # Ensure we have at least one element
+    if not all_liabilities:
+        all_liabilities = [(None, None)]
+    
+    return all_liabilities
+
+
 def extract_trade_credit_amount_due(text: str) -> Optional[float]:
+    """Extract first trade credit amount due (sum of all amounts in first section)."""
     section = extract_text_between_headers(
         "TRADE / CREDIT REFERENCE (CR)",
         "LEGEND",
@@ -173,6 +315,37 @@ def extract_trade_credit_amount_due(text: str) -> Optional[float]:
     if not amounts:
         return None
     return sum(parse_money(amount) or 0 for amount in amounts)
+
+
+def extract_trade_credit_amount_due_all(text: str) -> list[Optional[float]]:
+    """
+    Extract ALL trade credit amount due occurrences.
+    Each value is the sum of all amounts in that section.
+    Returns dynamic length list based on how many sections are found.
+    """
+    # Find all sections with "TRADE / CREDIT REFERENCE"
+    section_pattern = r"TRADE\s*/\s*CREDIT\s+REFERENCE.*?(?=\n[A-Z][A-Z &/\-]{10,}\n|LEGEND|$)"
+    sections = re.findall(section_pattern, text, re.IGNORECASE | re.DOTALL)
+    
+    all_amounts = []
+    
+    for section in sections:
+        amounts = re.findall(
+            r"Amount\s+Due\s*[:\-]?\s*([0-9][0-9,]*(?:\.\d{2})?)",
+            section,
+            re.IGNORECASE,
+        )
+        if amounts:
+            total = sum(parse_money(amount) or 0 for amount in amounts)
+            all_amounts.append(total if total > 0 else None)
+        else:
+            all_amounts.append(None)
+    
+    # Ensure we have at least one element
+    if not all_amounts:
+        all_amounts = [None]
+    
+    return all_amounts
 
 
 def extract_text_between_headers(start_header: str, end_header: str, text: str) -> Optional[str]:
@@ -226,63 +399,136 @@ def extract_litigation_defendant_flags(text: str) -> dict[str, str]:
     }
 
 
+def extract_litigation_defendant_flags_all(text: str) -> list[dict[str, str]]:
+    """
+    Extract ALL litigation defendant flags occurrences.
+    Returns list of dicts with flags for each subject (dynamic length).
+    """
+    # Find all LITIGATION sections
+    litigation_pattern = r"SECTION 3: LITIGATION INFORMATION.*?(?=SECTION|PARTICULARS OF THE SUBJECT|$)"
+    sections = re.findall(litigation_pattern, text, re.IGNORECASE | re.DOTALL)
+    
+    labels = [
+        "CASE WITHDRAWN / SETTLED",
+        "OTHER KNOWN LEGAL SUITS WITH LIMITED DETAILS - SUBJECT AS DEFENDANT",
+        "LEGAL SUITS - SUBJECT AS DEFENDANT",
+    ]
+
+    def subsection_after_label(section_text: str, label: str) -> Optional[str]:
+        label_esc = re.escape(label)
+        other_labels = [re.escape(item) for item in labels if item != label]
+        if other_labels:
+            boundary = "|".join(other_labels)
+            pattern = rf"{label_esc}\s*(.*?)(?=({boundary})|$)"
+        else:
+            pattern = rf"{label_esc}\s*(.*)$"
+        match = re.search(pattern, section_text, re.IGNORECASE | re.DOTALL)
+        return match.group(1) if match else None
+
+    def has_defendant_name(block: Optional[str]) -> bool:
+        if not block:
+            return False
+        return re.search(r"\bDefendant Name\b", block, re.IGNORECASE) is not None
+
+    def extract_flags_from_section(section: str) -> dict[str, str]:
+        if not section:
+            return {
+                "Case_Withdrawn_Settled_Defendant_Name": "No",
+                "Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name": "No",
+                "Legal_Suits_Subject_As_Defendant_Defendant_Name": "No",
+            }
+        return {
+            "Case_Withdrawn_Settled_Defendant_Name": "Yes"
+            if has_defendant_name(subsection_after_label(section, labels[0]))
+            else "No",
+            "Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name": "Yes"
+            if has_defendant_name(subsection_after_label(section, labels[1]))
+            else "No",
+            "Legal_Suits_Subject_As_Defendant_Defendant_Name": "Yes"
+            if has_defendant_name(subsection_after_label(section, labels[2]))
+            else "No",
+        }
+    
+    all_flags = []
+    for section in sections:
+        all_flags.append(extract_flags_from_section(section))
+    
+    # Ensure we have at least one element
+    if not all_flags:
+        default_flags = {
+            "Case_Withdrawn_Settled_Defendant_Name": "No",
+            "Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name": "No",
+            "Legal_Suits_Subject_As_Defendant_Defendant_Name": "No",
+        }
+        all_flags = [default_flags]
+    
+    return all_flags
+
+
 def extract_fields(pdf_path: str) -> dict:
-    """Extract required fields from PDF."""
+    """Extract required fields from PDF. Supports dynamic number of subjects."""
     text = read_pdf_text(pdf_path)
     print("text: ", text)
 
     incorporation_date = extract_date_after_label("Incorporation Date", text)
     incorporation_year = int(incorporation_date[-4:]) if incorporation_date else None
-    borrower_outstanding, borrower_total_limit = extract_borrower_liabilities(text)
-    litigation_flags = extract_litigation_defendant_flags(text)
     
-    # Extract all i-SCORE values in one pass
-    credit_score, credit_score_2, credit_score_3 = extract_iscores_all(text)
-
-    return {
+    # Extract ALL occurrences for multi-subject fields (dynamic length)
+    all_litigation_flags = extract_litigation_defendant_flags_all(text)
+    all_credit_scores = extract_iscores_all(text)
+    all_names_of_subject = extract_name_of_subject_all(text)
+    all_winding_up = extract_int_after_label_all("Winding Up Record", text)
+    all_credit_apps_approved = extract_int_after_label_all("Credit Applications Approved for Last 12 months", text)
+    all_credit_apps_pending = extract_int_after_label_all("Credit Applications Pending", text)
+    all_legal_action = extract_int_after_label_all("Legal Action taken (from Banking)", text)
+    all_existing_facility = extract_int_after_label_all("Existing No. of Facility (from Banking)", text)
+    all_total_enquiries = extract_int_after_label_all("Total Enquiries for Last 12 months", text)
+    all_special_attention = extract_int_after_label_all("Special Attention Account", text)
+    all_legal_suits = extract_legal_suits_all(text)
+    all_liabilities = extract_borrower_liabilities_all(text)
+    all_trade_credit = extract_trade_credit_amount_due_all(text)
+    
+    print(f"✅ Found {len(all_names_of_subject)} subject(s) in PDF")
+    
+    # Build result dictionary dynamically
+    result = {
         "pdf_file": pdf_path,
-        "Name_Of_Subject": extract_name_of_subject(text),
-        "i_SCORE": credit_score,
-        "i_SCORE_2": credit_score_2,
-        "i_SCORE_3": credit_score_3,
         "Incorporation_Year": incorporation_year,
         "Status": extract_word_after_label("Status", text),
         "Private_Exempt_Company": extract_word_after_label("Private Exempt Company", text),
         "Last_Updated_By_Experian": extract_last_updated_by_experian(text),
-
-        "Winding_Up_Record": extract_int_after_label("Winding Up Record", text),
-        "Credit_Applications_Approved_Last_12_months": extract_int_after_label(
-            "Credit Applications Approved for Last 12 months", text
-        ),
-        "Credit_Applications_Pending": extract_int_after_label("Credit Applications Pending", text),
-        "Legal_Action_taken_from_Banking": extract_int_after_label("Legal Action taken (from Banking)", text),
-        "Existing_No_of_Facility_from_Banking": extract_int_after_label(
-            "Existing No. of Facility (from Banking)", text
-        ),
-        "Total_Enquiries_Last_12_months": extract_int_after_label(
-            "Total Enquiries for Last 12 months", text
-        ),
-        "Special_Attention_Account": extract_int_after_label("Special Attention Account", text),
-
-        "Legal_Suits": extract_legal_suits_total(text),
-        "Borrower_Outstanding_RM": borrower_outstanding,
-        "Borrower_Total_Limit_RM": borrower_total_limit,
-        "Trade_Credit_Reference_Amount_Due_RM": extract_trade_credit_amount_due(text),
-        **litigation_flags,
     }
+    
+    # Helper function to add multi-subject fields
+    def add_multi_subject_field(field_name: str, values: list):
+        for i, value in enumerate(values):
+            suffix = f"_{i+1}" if i > 0 else ""
+            result[f"{field_name}{suffix}"] = value
+    
+    # Add all multi-subject fields dynamically
+    add_multi_subject_field("Name_Of_Subject", all_names_of_subject)
+    add_multi_subject_field("i_SCORE", all_credit_scores)
+    add_multi_subject_field("Winding_Up_Record", all_winding_up)
+    add_multi_subject_field("Credit_Applications_Approved_Last_12_months", all_credit_apps_approved)
+    add_multi_subject_field("Credit_Applications_Pending", all_credit_apps_pending)
+    add_multi_subject_field("Legal_Action_taken_from_Banking", all_legal_action)
+    add_multi_subject_field("Existing_No_of_Facility_from_Banking", all_existing_facility)
+    add_multi_subject_field("Total_Enquiries_Last_12_months", all_total_enquiries)
+    add_multi_subject_field("Special_Attention_Account", all_special_attention)
+    add_multi_subject_field("Legal_Suits", all_legal_suits)
+    add_multi_subject_field("extract_trade_credit_amount_dueextract_trade_credit_amount_due", all_trade_credit)
+    
+    # Add borrower liabilities (Outstanding and Total Limit)
+    for i, (outstanding, limit) in enumerate(all_liabilities):
+        suffix = f"_{i+1}" if i > 0 else ""
+        result[f"Borrower_Outstanding_RM{suffix}"] = outstanding
+        result[f"Borrower_Total_Limit_RM{suffix}"] = limit
+    
+    # Add litigation flags for each subject
+    for i, flags in enumerate(all_litigation_flags):
+        suffix = f"_{i+1}" if i > 0 else ""
+        for key, value in flags.items():
+            result[f"{key}{suffix}"] = value
+    
+    return result
 
-
-if __name__ == "__main__":
-    try:
-        pdf_path = pick_pdf_file()
-        if not pdf_path:
-            print("No PDF selected. Exit.")
-            raise SystemExit(0)
-
-        print(f"Selected PDF: {pdf_path}")
-        result = extract_fields(pdf_path)
-        print(json.dumps(result, indent=2))
-
-    except Exception as e:
-        print(f"ERROR: {e}")
-        raise
