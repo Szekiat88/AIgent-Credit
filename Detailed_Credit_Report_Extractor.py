@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pdfplumber
 
-from pdf_utils import pick_pdf_file, parse_decimal, extract_section_lines, RE_MONEY
+from pdf_utils import pick_pdf_file, parse_decimal, extract_section_lines, extract_all_sections, RE_MONEY
 
 
 # =============================
@@ -240,9 +240,50 @@ def split_into_records(lines: List[str]) -> List[BankingAccountRecord]:
 # MAIN
 # =============================
 def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
-    section_lines = extract_section_lines(pdf_path, START_MARKER, END_MARKER)
-    records = split_into_records(section_lines)
+    """
+    Extract all DETAILED CREDIT REPORT (BANKING ACCOUNTS) sections from PDF.
+    Handles multiple occurrences and processes each separately.
+    """
+    all_section_lines = extract_all_sections(pdf_path, START_MARKER, END_MARKER)
     total_balances = extract_total_balances(pdf_path)
+    
+    sections_data = []
+    
+    print(f"\n🔍 Found {len(all_section_lines)} DETAILED CREDIT REPORT (BANKING ACCOUNTS) section(s)\n")
+    
+    for section_idx, section_lines in enumerate(all_section_lines, start=1):
+        print(f"{'='*80}")
+        print(f"📊 Processing Section {section_idx} of {len(all_section_lines)}")
+        print(f"{'='*80}")
+        
+        records = split_into_records(section_lines)
+        analysis = analyze_account_lines(records)
+        
+        # Extract and print MIA statistics
+        digit_counts = analysis.get("digit_counts_totals", {})
+        first_month_counts = digit_counts.get("next_first_numbers_digit_counts_0_1_2_3_5_plus", {})
+        six_month_counts = digit_counts.get("next_six_numbers_digit_counts_0_1_2_3_5_plus", {})
+        
+        print(f"\n📈 Current 1 Month MIA Statistics:")
+        print(f"   MIA1: {first_month_counts.get('1', 0)}")
+        print(f"   MIA2: {first_month_counts.get('2', 0)}")
+        print(f"   MIA3: {first_month_counts.get('3', 0)}")
+        print(f"   MIA4+: {first_month_counts.get('5_plus', 0)}")
+        
+        print(f"\n📈 Past 6 Months MIA Statistics:")
+        print(f"   MIA1: {six_month_counts.get('1', 0)}")
+        print(f"   MIA2: {six_month_counts.get('2', 0)}")
+        print(f"   MIA3: {six_month_counts.get('3', 0)}")
+        print(f"   MIA4+: {six_month_counts.get('5_plus', 0)}")
+        
+        print(f"\n✅ Records in this section: {len(records)}")
+        print()
+        
+        sections_data.append({
+            "section_number": section_idx,
+            "record_count": len(records),
+            "account_line_analysis": analysis,
+        })
 
     output: Dict[str, Any] = {
         "source_pdf": pdf_path,
@@ -250,7 +291,8 @@ def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
             "start_marker": START_MARKER,
             "end_marker": END_MARKER,
         },
-        "account_line_analysis": analyze_account_lines(records),
+        "total_sections_found": len(all_section_lines),
+        "sections": sections_data,
         "totals": total_balances,
     }
 
@@ -270,9 +312,15 @@ def main():
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 
-    record_count = len(output.get("account_line_analysis", {}).get("amount_totals", {}).get("by_record_no", {}))
-    print(f"✅ Extracted {record_count} records")
+    # Count total records across all sections
+    total_records = sum(section.get("record_count", 0) for section in output.get("sections", []))
+    
+    print(f"{'='*80}")
+    print(f"✅ Processing Complete!")
+    print(f"✅ Total sections processed: {output.get('total_sections_found', 0)}")
+    print(f"✅ Total records extracted: {total_records}")
     print(f"✅ Saved to {out_file}")
+    print(f"{'='*80}")
 
 
 if __name__ == "__main__":

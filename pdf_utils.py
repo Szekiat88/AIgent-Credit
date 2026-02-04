@@ -102,3 +102,53 @@ def extract_section_lines(pdf_path: str, start_marker: str, end_marker: str) -> 
                     lines_between.append(line)
 
     return lines_between
+
+
+def extract_all_sections(pdf_path: str, start_marker: str, end_marker: str) -> List[List[str]]:
+    """
+    Extract ALL sections between two markers in a PDF (handles multiple occurrences).
+    
+    Args:
+        pdf_path: Path to the PDF file
+        start_marker: Text marker that indicates start of section
+        end_marker: Text marker that indicates end of section
+        
+    Returns:
+        List of sections, where each section is a list of lines
+    """
+    all_sections: List[List[str]] = []
+    current_section: List[str] = []
+    in_section = False
+
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            for line in text.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+
+                if start_marker.lower() in line.lower():
+                    # If we were already in a section, save it before starting new one
+                    if in_section and current_section:
+                        all_sections.append(current_section)
+                        current_section = []
+                    in_section = True
+                    continue
+
+                if in_section and end_marker.lower() in line.lower():
+                    # End of current section
+                    if current_section:
+                        all_sections.append(current_section)
+                    current_section = []
+                    in_section = False
+                    continue
+
+                if in_section:
+                    current_section.append(line)
+
+    # Don't forget the last section if the PDF ends without an end marker
+    if in_section and current_section:
+        all_sections.append(current_section)
+
+    return all_sections

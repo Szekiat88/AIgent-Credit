@@ -245,13 +245,33 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     add_multi_subject_data("Summary of Total Liabilities (Total Limit) (per primary CRA report)", "Borrower_Total_Limit_RM", _format_number)
     
     # Company-level data (same for all subjects since these are aggregated at company level)
-    overdraft_compliance = _compute_overdraft_compliance(analysis)
+    # Handle multiple sections for detailed_credit_report
+    sections = detailed.get("sections", [])
+    if not sections:
+        # Fallback to old structure for backward compatibility
+        sections = [{"account_line_analysis": analysis}] if analysis else []
+    
+    # Aggregate overdraft compliance from all sections
+    all_analyses = [section.get("account_line_analysis", {}) for section in sections]
+    overdraft_compliance = "N/A"
+    if all_analyses:
+        # Use first section's analysis for overdraft compliance (or aggregate if needed)
+        overdraft_compliance = _compute_overdraft_compliance(all_analyses[0])
+    
     banking_facilities_status = total_banking_within_limit + ", outstanding: " + str(total_outstanding) + ", limit: " + str(total_limit)
     non_bank_facilities_status = (non_bank_within_limit if non_bank_total_limit is not None and non_bank_total_outstanding is not None else "N/A")
-    ccris_conduct_count = analysis.get("digit_counts_totals")
-    ccris_legal_status = analysis.get("Bank_LOD")
+    ccris_legal_status = analysis.get("Bank_LOD") if analysis else None
     non_bank_conduct = non_bank_stats if non_bank_stats else _format_number(non_bank_conduct_count)
     non_bank_legal = non_bank_legal_status
+    
+    # Extract MIA counts from each section for CCRIS Conduct Count
+    # Each section's MIA will go into a separate column (M, O, Q, S, U, ...)
+    ccris_conduct_counts_by_section = []
+    for section in sections:
+        section_analysis = section.get("account_line_analysis", {})
+        section_digit_counts = section_analysis.get("digit_counts_totals", {})
+        if section_digit_counts:
+            ccris_conduct_counts_by_section.append(section_digit_counts)
     
     # Repeat company-level data for all subjects
     for i in range(1, num_subjects + 1):
@@ -259,7 +279,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
         data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_facilities_status
         data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_facilities_status
-        data[f"CCRIS Loan Account - Conduct Count (per primary CRA report){suffix}"] = ccris_conduct_count
+        # CCRIS Conduct Count will be handled separately with section-specific columns
         data[f"CCRIS Loan Account - Legal Status (per primary CRA report){suffix}"] = ccris_legal_status
         data[f"Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report){suffix}"] = non_bank_conduct
         data[f"Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report){suffix}"] = non_bank_legal
@@ -343,6 +363,7 @@ def fill_knockout_matrix(
     data_by_label: Dict[str, Any],
     cra_report_date: Optional[str] = None,
     all_subject_names: Optional[list[str]] = None,
+    ccris_conduct_counts_by_section: Optional[list[Dict[str, Any]]] = None,
 ) -> str:
     wb = openpyxl.load_workbook(file_path)
     if SHEET_NAME not in wb.sheetnames:
@@ -434,6 +455,27 @@ def fill_knockout_matrix(
         ws.cell(row, target_col).value = _format_cell_value(value)
         written += 1
 
+    # 4b) Insert CCRIS Conduct Count MIA values for each section into separate cells
+    if ccris_conduct_counts_by_section:
+        ccris_label = "CCRIS Loan Account - Conduct Count (per primary CRA report)"
+        ccris_row = label_index.get(_norm(ccris_label))
+        
+        if ccris_row:
+            for section_idx, section_digit_counts in enumerate(ccris_conduct_counts_by_section):
+                # Each section goes into a column offset by 2 (M, O, Q, S, U, ...)
+                col_offset = section_idx * 2
+                target_col = issuer_data_col + col_offset
+                
+                # Format the MIA counts
+                formatted_value = _format_cell_value(section_digit_counts)
+                ws.cell(ccris_row, target_col).value = formatted_value
+                written += 1
+                
+                col_letter = openpyxl.utils.get_column_letter(target_col)
+                print(f"✅ Inserted Section {section_idx + 1} MIA at Row {ccris_row}, Column {col_letter}")
+        else:
+            print(f"⚠️ Could not find row for '{ccris_label}' - skipping section MIA insertion")
+
     # 5) Save output
     base, ext = os.path.splitext(file_path)
     output_path = f"{base}_FILLED{ext}"
@@ -486,11 +528,22 @@ if __name__ == "__main__":
     
     print(f"✅ Found {len(all_subject_names)} subject(s) to insert into Excel")
 
+    # Extract sections data for MIA insertion
+    detailed = merged.get("detailed_credit_report", {})
+    sections = detailed.get("sections", [])
+    ccris_conduct_counts_by_section = []
+    for section in sections:
+        section_analysis = section.get("account_line_analysis", {})
+        section_digit_counts = section_analysis.get("digit_counts_totals", {})
+        if section_digit_counts:
+            ccris_conduct_counts_by_section.append(section_digit_counts)
+    
     out = fill_knockout_matrix(
         excel_file, 
         issuer_name, 
         data, 
         cra_report_date=cra_report_date,
         all_subject_names=all_subject_names,
+        ccris_conduct_counts_by_section=ccris_conduct_counts_by_section if ccris_conduct_counts_by_section else None,
     )
     print("✅ File saved:", out)
