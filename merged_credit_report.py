@@ -8,9 +8,20 @@ from load_file_version import extract_fields, pick_pdf_file
 
 
 def merge_reports(pdf_path: str) -> Dict[str, Any]:
+    """
+    Merge all credit report extracts.
+    Note: Each extractor loads the PDF independently for now.
+    For better performance, consider extracting PDF text once and passing to extractors.
+    """
+    print("📄 Loading PDF for extraction...")
     summary_report = extract_fields(pdf_path)
+    print("✅ Summary report extracted")
+    
     detailed_report = extract_detailed_credit_report(pdf_path)
+    print("✅ Detailed report extracted")
+    
     non_bank_report = extract_non_bank_lender_credit_information(pdf_path)
+    print("✅ Non-bank report extracted")
 
     return {
         "pdf_file": pdf_path,

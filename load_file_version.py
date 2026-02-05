@@ -100,17 +100,11 @@ def extract_name_of_subject_all(text: str) -> list[Optional[str]]:
     Extract the FIRST 'Name Of Subject' from each 'PARTICULARS OF THE SUBJECT PROVIDED BY YOU' section.
     Returns ALL names found (dynamic length).
     """
-    
-    print("\n" + "="*80)
-    print("DEBUG: Name Of Subject Extraction")
-    print("="*80)
-    
+
     # Find all occurrences of the section header
     section_pattern = r"PARTICULARS OF THE SUBJECT PROVIDED BY YOU"
     section_positions = [(m.start(), m.end()) for m in re.finditer(section_pattern, text, re.IGNORECASE)]
-    
-    print(f"🔍 Found {len(section_positions)} section(s) with header 'PARTICULARS OF THE SUBJECT PROVIDED BY YOU'")
-    
+        
     names = []
     
     if not section_positions:
@@ -127,19 +121,13 @@ def extract_name_of_subject_all(text: str) -> list[Optional[str]]:
                 section_text = text[end_pos:next_start]
             else:
                 section_text = text[end_pos:]
-            
-            print(f"\n📋 Section {i}:")
-            print(f"   Position: {start_pos} - {end_pos}")
-            print(f"   Section length: {len(section_text)} characters")
-            print(f"   First 300 chars: {section_text[:300].strip()}")
-            
+           
             # Extract ALL "Name Of Subject" in this section
             section_matches = re.findall(r"Name Of Subject\s*[:\-]?\s*([^\n]+)", section_text, re.IGNORECASE)
             
             if section_matches:
                 # Take only the FIRST match from this section
                 first_match = section_matches[0].strip()
-                print(f"   ✅ Found {len(section_matches)} match(es), taking FIRST: '{first_match}'")
                 if len(section_matches) > 1:
                     print(f"   ⚠️  Ignoring {len(section_matches) - 1} duplicate(s) in same section: {section_matches[1:]}")
                 names.append(first_match)
@@ -149,9 +137,6 @@ def extract_name_of_subject_all(text: str) -> list[Optional[str]]:
     # Ensure we have at least one element
     if not names:
         names = [None]
-    
-    print(f"\n✅ Final extracted Name Of Subject values: {names}")
-    print("="*80 + "\n")
     
     return names
 
@@ -468,7 +453,6 @@ def extract_litigation_defendant_flags_all(text: str) -> list[dict[str, str]]:
 def extract_fields(pdf_path: str) -> dict:
     """Extract required fields from PDF. Supports dynamic number of subjects."""
     text = read_pdf_text(pdf_path)
-    print("text: ", text)
 
     incorporation_date = extract_date_after_label("Incorporation Date", text)
     incorporation_year = int(incorporation_date[-4:]) if incorporation_date else None

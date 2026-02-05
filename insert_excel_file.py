@@ -1,3 +1,5 @@
+"""Fill Knockout Matrix Excel from merged credit report data."""
+
 from __future__ import annotations
 
 import argparse
@@ -5,41 +7,67 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
 
 from merged_credit_report import merge_reports, resolve_pdf_path
 from pdf_utils import pick_excel_file
+from extract_amount_due import extract_trade_amounts_for_excel
+import pdfplumber
 
 SHEET_NAME = "Knock-Out"
-LABEL_COL = 4  # D
+LABEL_COL = 4  # Column D
 DEFAULT_EXCEL = "Knockout Matrix Template.xlsx"
 SCORE_RANGE_EQUIVALENTS = [
-    (742, float("inf"), "A"),
-    (701, 740, "A"),
-    (661, 700, "B"),
-    (621, 660, "B"),
-    (581, 620, "C"),
-    (541, 580, "C"),
-    (501, 540, "D"),
-    (461, 500, "E"),
-    (421, 460, "F"),
-    (0, 420, "F"),
+    (742, float("inf"), "A"), (701, 740, "A"), (661, 700, "B"),
+    (621, 660, "B"), (581, 620, "C"), (541, 580, "C"),
+    (501, 540, "D"), (461, 500, "E"), (421, 460, "F"), (0, 420, "F"),
+]
+MULTI_COL_PATTERNS = [
+    "Scoring by CRA Agency (Issuer's Credit Agency Score)",
+    "Scoring by CRA Agency (Credit Score Equivalent)",
+    "Winding Up / Bankruptcy Proceedings Record",
+    "Credit Applications Approved for Last 12 months (per primary CRA report)",
+    "Credit Applications Pending (per primary CRA report)",
+    "Legal Action taken (from Banking) (per primary CRA report)",
+    "Existing No. of Facility (from Banking) (per primary CRA report)",
+    "Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)",
+    "Legal Case - Status (per primary CRA report)",
+    "Trade / Credit Reference (per primary CRA report)",
+    "Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)",
+    "Special Attention Account (per primary CRA report)",
+    "Summary of Total Liabilities (Outstanding) (per primary CRA report)",
+    "Summary of Total Liabilities (Total Limit) (per primary CRA report)",
+    "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)",
+    "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)",
+    "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report)",
+    "CCRIS Loan Account - Conduct Count (per primary CRA report)",
+    "CCRIS Loan Account - Legal Status (per primary CRA report)",
+    "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)",
+    "Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report)",
 ]
 
 
 def _norm(s: str) -> str:
+    """Normalize string for comparison."""
     s = s or ""
     s = s.replace("\u2019", "'").replace("\u2018", "'")
     s = s.replace("\u201c", '"').replace("\u201d", '"')
-    s = s.replace("\n", " ")
-    s = re.sub(r"\s+", " ", s).strip().lower()
-    return s
+    return re.sub(r"\s+", " ", s.replace("\n", " ")).strip().lower()
+
+
+def _safe_int(value: Any) -> int:
+    """Safely convert value to int."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _format_number(value: Optional[float | int]) -> Optional[str]:
+    """Format number for display."""
     if value is None:
         return None
     if isinstance(value, bool):
@@ -49,88 +77,71 @@ def _format_number(value: Optional[float | int]) -> Optional[str]:
     return str(value)
 
 
-def _safe_int(value: Any) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
-
-
 def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
-    next_six_counts = value.get("next_six_numbers_digit_counts_0_1_2_3_5_plus")
-    next_first_counts = value.get("next_first_numbers_digit_counts_0_1_2_3_5_plus")
-    last_1_counts = value.get("last_1_month", {}).get("freq") if isinstance(value.get("last_1_month"), dict) else None
-    last_6_counts = value.get("last_6_months", {}).get("freq") if isinstance(value.get("last_6_months"), dict) else None
-
-    if not any(isinstance(v, dict) for v in (next_six_counts, next_first_counts, last_1_counts, last_6_counts)):
+    """Format MIA counts for display."""
+    counts = {
+        "next_six": value.get("next_six_numbers_digit_counts_0_1_2_3_5_plus"),
+        "next_first": value.get("next_first_numbers_digit_counts_0_1_2_3_5_plus"),
+        "last_1": value.get("last_1_month", {}).get("freq") if isinstance(value.get("last_1_month"), dict) else None,
+        "last_6": value.get("last_6_months", {}).get("freq") if isinstance(value.get("last_6_months"), dict) else None,
+    }
+    
+    if not any(isinstance(v, dict) for v in counts.values()):
         return None
 
-    def format_counts(counts: Dict[str, Any], plus_key: str) -> str:
-        mia1 = _safe_int(counts.get("1"))
-        mia2 = _safe_int(counts.get("2"))
-        mia3 = _safe_int(counts.get("3"))
-        mia4_plus = _safe_int(counts.get(plus_key))
-        return f"MIA1: {mia1}, MIA2: {mia2}, MIA3: {mia3}, MIA4+: {mia4_plus}"
+    def format_counts(counts_dict: Dict[str, Any], plus_key: str) -> str:
+        """Format counts as 'MIA1: X, MIA2: Y, ...'"""
+        return f"MIA1: {_safe_int(counts_dict.get('1', 0))}, MIA2: {_safe_int(counts_dict.get('2', 0))}, MIA3: {_safe_int(counts_dict.get('3', 0))}, MIA4+: {_safe_int(counts_dict.get(plus_key, 0))}"
 
     parts = []
-    if isinstance(next_first_counts, dict):
-        parts.append(f"current 1 month {format_counts(next_first_counts, '5_plus')}")
-    if isinstance(last_1_counts, dict):
-        parts.append(f"current 1 month {format_counts(last_1_counts, '4+')}")
-    if isinstance(next_six_counts, dict):
-        parts.append(f"past 6 months {format_counts(next_six_counts, '5_plus')}")
-    if isinstance(last_6_counts, dict):
-        parts.append(f"past 6 months {format_counts(last_6_counts, '4+')}")
+    if isinstance(counts["next_first"], dict):
+        parts.append(f"current 1 month {format_counts(counts['next_first'], '5_plus')}")
+    if isinstance(counts["last_1"], dict):
+        parts.append(f"current 1 month {format_counts(counts['last_1'], '4+')}")
+    if isinstance(counts["next_six"], dict):
+        parts.append(f"past 6 months {format_counts(counts['next_six'], '5_plus')}")
+    if isinstance(counts["last_6"], dict):
+        parts.append(f"past 6 months {format_counts(counts['last_6'], '4+')}")
 
     return " and /or ".join(parts) if parts else None
 
 
 def _format_cell_value(value: Any) -> Any:
+    """Format cell value for Excel insertion."""
     if isinstance(value, dict):
         mia_counts = _format_mia_counts(value)
-        if mia_counts is not None:
-            return mia_counts
-        return json.dumps(value, ensure_ascii=False)
+        return mia_counts if mia_counts else json.dumps(value, ensure_ascii=False)
     if isinstance(value, list):
         return json.dumps(value, ensure_ascii=False)
     return value
 
 
 def _first_value(items: list[float] | None) -> Optional[float]:
+    """Safely get first value from list."""
     if not items:
         return None
     return items[0]
 
 
-def load_merged_report(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def resolve_excel_path(arg_excel: Optional[str]) -> str:
-    if arg_excel:
-        return arg_excel
-    return str(Path(__file__).resolve().parent / DEFAULT_EXCEL)
-
-
 def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
+    """Compute overdraft compliance status."""
     totals_by_record = analysis.get("amount_totals", {}).get("by_record_no", {})
     first_values = analysis.get("first_line_numbers_after_date_by_record_no", {})
+    
     if not totals_by_record and not first_values:
         return "N/A"
 
     failures = []
     for record_no, total in totals_by_record.items():
-        first_value = _first_value(first_values.get(record_no))
-        if first_value is None:
-            continue
-        if float(total) > float(first_value):
+        first_val = _first_value(first_values.get(record_no))
+        if first_val is not None and float(total) > float(first_val):
             failures.append(record_no)
-
+    
     return "Yes" if not failures else "No"
 
 
 def score_to_equivalent(score: Optional[int]) -> Optional[str]:
+    """Convert credit score to equivalent grade."""
     if score is None:
         return None
     for lower, upper, grade in SCORE_RANGE_EQUIVALENTS:
@@ -139,88 +150,107 @@ def score_to_equivalent(score: Optional[int]) -> Optional[str]:
     return None
 
 
-def _non_bank_conduct_count(stats_totals: Dict[str, Any]) -> Optional[int]:
-    last_6 = stats_totals.get("last_6_months", {}).get("freq")
-    if not last_6:
+def _format_non_bank_mia(stats: Dict[str, Any]) -> Optional[str]:
+    """Format non-bank lender MIA counts for display."""
+    if not isinstance(stats, dict):
         return None
-    return sum(int(last_6.get(key, 0)) for key in ("1", "2", "3", "4+"))
+    
+    last_1 = stats.get("last_1_month", {}).get("freq") if isinstance(stats.get("last_1_month"), dict) else None
+    last_6 = stats.get("last_6_months", {}).get("freq") if isinstance(stats.get("last_6_months"), dict) else None
+    
+    if not isinstance(last_1, dict) and not isinstance(last_6, dict):
+        return None
+    
+    def format_counts(counts_dict: Dict[str, Any], plus_key: str) -> str:
+        """Format counts as 'MIA1: X, MIA2: Y, ...'"""
+        return f"MIA1: {_safe_int(counts_dict.get('1', 0))}, MIA2: {_safe_int(counts_dict.get('2', 0))}, MIA3: {_safe_int(counts_dict.get('3', 0))}, MIA4+: {_safe_int(counts_dict.get(plus_key, 0))}"
+    
+    parts = []
+    if isinstance(last_1, dict):
+        parts.append(f"current 1 month {format_counts(last_1, '4+')}")
+    if isinstance(last_6, dict):
+        parts.append(f"past 6 months {format_counts(last_6, '4+')}")
+    
+    return " and /or ".join(parts) if parts else None
 
 
-def _non_bank_legal_status(records: list[Dict[str, Any]]) -> Optional[str]:
+def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
+    """Extract non-bank lender data."""
+    totals = non_bank.get("totals", {}) if isinstance(non_bank.get("totals"), dict) else {}
+    stats = non_bank.get("stats_totals", {}) if isinstance(non_bank.get("stats_totals"), dict) else {}
+    records = non_bank.get("records", []) if isinstance(non_bank.get("records"), list) else []
+    
+    # Format MIA counts for conduct count display
+    mia_formatted = _format_non_bank_mia(stats)
+    
+    # Conduct count - use formatted MIA string if available, otherwise count records
+    conduct_count = mia_formatted
+    if conduct_count is None and records:
+        # Fallback: count records (accounts) with ANY MIA (1, 2, 3, or 4+) in last 6 months
+        count = 0
+        for record in records:
+            record_stats = record.get("stats", {})
+            last_6_values = record_stats.get("last_6_months", {}).get("values", [])
+            # Check if this record has ANY MIA (1, 2, 3, or 4+) in the last 6 months
+            if any(val is not None and val >= 1 for val in last_6_values):
+                count += 1
+        conduct_count = count if count > 0 else None
+    
+    # Legal status
     markers = sorted({record.get("legal_marker") for record in records if record.get("legal_marker")})
-    if not markers:
-        return "No"
-    return ", ".join(markers)
+    legal_status = ", ".join(markers) if markers else "No"
+    
+    return totals, stats, conduct_count, legal_status
+
+
+def _within_limit(outstanding, limit) -> str:
+    """Check if outstanding is within limit."""
+    return "YES" if outstanding is not None and limit is not None and outstanding <= limit else "NO"
 
 
 def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
+    """Build knockout matrix data from merged report."""
     summary = merged.get("summary_report", {})
     detailed = merged.get("detailed_credit_report", {})
     non_bank = merged.get("non_bank_lender_credit_information", {})
-    analysis = detailed.get("account_line_analysis", {})
+    
     totals = detailed.get("totals", {})
-    non_bank_totals = non_bank.get("totals", {}) if isinstance(non_bank.get("totals", {}), dict) else {}
-    non_bank_stats = non_bank.get("stats_totals", {}) if isinstance(non_bank.get("stats_totals", {}), dict) else {}
-    non_bank_records = non_bank.get("records", []) if isinstance(non_bank.get("records", []), list) else {}
-
     total_limit = totals.get("total_limit") or summary.get("Borrower_Total_Limit_RM")
     total_outstanding = totals.get("total_outstanding_balance") or summary.get("Borrower_Outstanding_RM")
-    total_banking_within_limit = (
-        "YES" if total_outstanding is not None and total_limit is not None and total_outstanding <= total_limit else "NO"
-    )
-    non_bank_total_limit = non_bank_totals.get("total_limit")
-    non_bank_total_outstanding = non_bank_totals.get("total_outstanding")
-    non_bank_within_limit = (
-        "YES"
-        if non_bank_total_outstanding is not None
-        and non_bank_total_limit is not None
-        and non_bank_total_outstanding <= non_bank_total_limit
-        else "NO"
-    )
-    non_bank_conduct_count = _non_bank_conduct_count(non_bank_stats)
-    non_bank_legal_status = _non_bank_legal_status(non_bank_records)
-
-    # Detect how many subjects are in the data (dynamic detection)
+    
+    non_bank_totals, non_bank_stats, non_bank_conduct, non_bank_legal = _get_non_bank_data(non_bank)
+    
+    # Detect number of subjects
     num_subjects = 1
-    while summary.get(f"Name_Of_Subject_{num_subjects + 1}") is not None:
+    while summary.get(f"Name_Of_Subject_{num_subjects + 1}"):
         num_subjects += 1
     
-    print(f"✅ Detected {num_subjects} subject(s) in merged data")
-    
-    # Build data dictionary
-    data = {}
-    
-    # Helper function to get field value for subject i (1-indexed)
+    # Helper functions
     def get_subject_field(field_name: str, subject_idx: int):
-        if subject_idx == 1:
-            return summary.get(field_name)
-        else:
-            return summary.get(f"{field_name}_{subject_idx}")
+        return summary.get(field_name if subject_idx == 1 else f"{field_name}_{subject_idx}")
     
-    # Helper function to add data for all subjects dynamically
     def add_multi_subject_data(label: str, field_name: str, format_func=None):
         for i in range(1, num_subjects + 1):
             suffix = f" {i}" if i > 1 else ""
             value = get_subject_field(field_name, i)
-            if format_func:
-                value = format_func(value)
-            data[f"{label}{suffix}"] = value
+            data[f"{label}{suffix}"] = format_func(value) if format_func else value
     
-    # Extract and add credit scores with equivalents
+    # Build data
+    data = {}
+    
+    # Credit scores
     for i in range(1, num_subjects + 1):
         suffix = f" {i}" if i > 1 else ""
         score = get_subject_field("i_SCORE", i)
         data[f"Scoring by CRA Agency (Issuer's Credit Agency Score){suffix}"] = _format_number(score)
         data[f"Scoring by CRA Agency (Credit Score Equivalent){suffix}"] = score_to_equivalent(score)
     
-    # Single-column fields (same for all subjects)
-    data["Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)"] = _format_number(
-        summary.get("Incorporation_Year")
-    )
+    # Single-column fields
+    data["Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)"] = _format_number(summary.get("Incorporation_Year"))
     data["Company Status (Existing Only)"] = summary.get("Status")
     data["Exempt Private Company"] = summary.get("Private_Exempt_Company")
     
-    # Multi-subject fields (dynamic number of subjects)
+    # Multi-subject fields
     add_multi_subject_data("Winding Up / Bankruptcy Proceedings Record", "Winding_Up_Record", _format_number)
     add_multi_subject_data("Credit Applications Approved for Last 12 months (per primary CRA report)", "Credit_Applications_Approved_Last_12_months", _format_number)
     add_multi_subject_data("Credit Applications Pending (per primary CRA report)", "Credit_Applications_Pending", _format_number)
@@ -228,63 +258,40 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     add_multi_subject_data("Existing No. of Facility (from Banking) (per primary CRA report)", "Existing_No_of_Facility_from_Banking", _format_number)
     add_multi_subject_data("Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)", "Legal_Suits", _format_number)
     
-    # Legal Case - Status: Combine the litigation flags for each subject
+    # Legal Case Status
     for i in range(1, num_subjects + 1):
         suffix = f" {i}" if i > 1 else ""
-        legal_case_status = (
-            str(get_subject_field("Legal_Suits_Subject_As_Defendant_Defendant_Name", i) or "No") + ", " +
-            str(get_subject_field("Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name", i) or "No") + ", " +
+        data[f"Legal Case - Status (per primary CRA report){suffix}"] = ", ".join([
+            str(get_subject_field("Legal_Suits_Subject_As_Defendant_Defendant_Name", i) or "No"),
+            str(get_subject_field("Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name", i) or "No"),
             str(get_subject_field("Case_Withdrawn_Settled_Defendant_Name", i) or "No")
-        )
-        data[f"Legal Case - Status (per primary CRA report){suffix}"] = legal_case_status
+        ])
     
-    add_multi_subject_data("Trade / Credit Reference (per primary CRA report)", "Trade_Credit_Reference_Amount_Due_RM", _format_number)
+    # Note: "Trade / Credit Reference" is handled separately with section-based Amount Due data
+    # Do not add subject-based data here to avoid conflicts with section data insertion
     add_multi_subject_data("Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)", "Total_Enquiries_Last_12_months", _format_number)
     add_multi_subject_data("Special Attention Account (per primary CRA report)", "Special_Attention_Account", _format_number)
     add_multi_subject_data("Summary of Total Liabilities (Outstanding) (per primary CRA report)", "Borrower_Outstanding_RM", _format_number)
     add_multi_subject_data("Summary of Total Liabilities (Total Limit) (per primary CRA report)", "Borrower_Total_Limit_RM", _format_number)
     
-    # Company-level data (same for all subjects since these are aggregated at company level)
-    # Handle multiple sections for detailed_credit_report
+    # Company-level data
     sections = detailed.get("sections", [])
     if not sections:
-        # Fallback to old structure for backward compatibility
-        sections = [{"account_line_analysis": analysis}] if analysis else []
+        sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
     
-    # Aggregate overdraft compliance from all sections
-    all_analyses = [section.get("account_line_analysis", {}) for section in sections]
-    overdraft_compliance = "N/A"
-    if all_analyses:
-        # Use first section's analysis for overdraft compliance (or aggregate if needed)
-        overdraft_compliance = _compute_overdraft_compliance(all_analyses[0])
+    overdraft_compliance = _compute_overdraft_compliance(sections[0].get("account_line_analysis", {})) if sections else "N/A"
+    banking_status = f"{_within_limit(total_outstanding, total_limit)}, outstanding: {total_outstanding}, limit: {total_limit}"
+    non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
     
-    banking_facilities_status = total_banking_within_limit + ", outstanding: " + str(total_outstanding) + ", limit: " + str(total_limit)
-    non_bank_facilities_status = (non_bank_within_limit if non_bank_total_limit is not None and non_bank_total_outstanding is not None else "N/A")
-    ccris_legal_status = analysis.get("Bank_LOD") if analysis else None
-    non_bank_conduct = non_bank_stats if non_bank_stats else _format_number(non_bank_conduct_count)
-    non_bank_legal = non_bank_legal_status
-    
-    # Extract MIA counts from each section for CCRIS Conduct Count
-    # Each section's MIA will go into a separate column (M, O, Q, S, U, ...)
-    ccris_conduct_counts_by_section = []
-    for section in sections:
-        section_analysis = section.get("account_line_analysis", {})
-        section_digit_counts = section_analysis.get("digit_counts_totals", {})
-        if section_digit_counts:
-            ccris_conduct_counts_by_section.append(section_digit_counts)
-    
-    # Repeat company-level data for all subjects
     for i in range(1, num_subjects + 1):
         suffix = f" {i}" if i > 1 else ""
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
-        data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_facilities_status
-        data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_facilities_status
-        # CCRIS Conduct Count will be handled separately with section-specific columns
-        data[f"CCRIS Loan Account - Legal Status (per primary CRA report){suffix}"] = ccris_legal_status
+        data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
+        data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_within
+        data[f"CCRIS Loan Account - Legal Status (per primary CRA report){suffix}"] = sections[0].get("account_line_analysis", {}).get("Bank_LOD") if sections else None
         data[f"Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report){suffix}"] = non_bank_conduct
         data[f"Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report){suffix}"] = non_bank_legal
     
-    # Single-column fields at the end
     data["Total Limit"] = _format_number(total_limit)
     data["Total Outstanding Balance"] = _format_number(total_outstanding)
     
@@ -292,69 +299,70 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def find_issuer_data_column(ws: Worksheet) -> int:
-    """
-    Find the 'Issuer' column used for the Knock-Out Items section.
-    In your template it's M6 (NOT E6).
-    We search for the first 'Issuer' header in the top area (rows 1-10).
-    """
-    best = None
+    """Find the 'Issuer' column for Knock-Out Items section."""
     for r in range(1, 11):
         for c in range(1, ws.max_column + 1):
             v = ws.cell(r, c).value
             if isinstance(v, str) and _norm(v) == "issuer":
-                best = (r, c)
-                break
-        if best:
-            break
-
-    if not best:
-        raise ValueError("Cannot find Issuer header column (e.g., M6).")
-    return best[1]
+                return c
+    raise ValueError("Cannot find Issuer header column.")
 
 
 def build_label_row_index(ws: Worksheet, label_col: int = LABEL_COL) -> Dict[str, int]:
-    """
-    Map each Knock-Out label text in column D -> row number.
-    Column D contains the label (merged across D:K but the value is in D).
-    """
-    idx: Dict[str, int] = {}
-    for r in range(1, ws.max_row + 1):
-        v = ws.cell(r, label_col).value
-        if isinstance(v, str) and v.strip():
-            idx[_norm(v)] = r
-    return idx
+    """Map each Knock-Out label text in column D to row number."""
+    return {
+        _norm(v): r
+        for r in range(1, ws.max_row + 1)
+        if (v := ws.cell(r, label_col).value) and isinstance(v, str) and v.strip()
+    }
 
 
-def set_issuer_name(ws: Worksheet, issuer_col_for_name: int, issuer_name: str) -> None:
-    """
-    Set Issuer Name next to 'Issuer Name:' (D6 -> E6).
-    This is separate from the Knock-Out Items Issuer data column.
-    """
+def set_issuer_name(ws: Worksheet, issuer_col: int, issuer_name: str) -> None:
+    """Set Issuer Name next to 'Issuer Name:' label."""
     for r in range(1, ws.max_row + 1):
-        v = ws.cell(r, 4).value  # D
+        v = ws.cell(r, 4).value
         if isinstance(v, str) and "issuer name" in _norm(v):
-            ws.cell(r, issuer_col_for_name).value = issuer_name
+            ws.cell(r, issuer_col).value = issuer_name
             return
 
 
 def set_cra_report_dates(ws: Worksheet, cra_report_date: Optional[str]) -> None:
+    """Set CRA report dates in the worksheet."""
     if not cra_report_date:
         return
-
-    target_label = "date (cra report):"
+    
     for r in range(1, 15):
         for c in range(1, ws.max_column + 1):
             v = ws.cell(r, c).value
-            if isinstance(v, str) and _norm(v) == target_label:
-                target_col = None
+            if isinstance(v, str) and _norm(v) == "date (cra report):":
+                target_col = c + 1
                 for offset in range(1, 4):
                     next_cell = ws.cell(r, c + offset)
                     if isinstance(next_cell.value, str) and "dd/mm/yyyy" in next_cell.value.lower():
                         target_col = c + offset
                         break
-                if target_col is None:
-                    target_col = c + 1
                 ws.cell(r, target_col).value = cra_report_date
+                return
+
+
+def _insert_section_data(ws: Worksheet, label: str, label_index: Dict[str, int], 
+                         issuer_data_col: int, data_by_section: List[Any], 
+                         format_func=None) -> int:
+    """Insert section data into Excel columns."""
+    row = label_index.get(_norm(label))
+    if not row:
+        print(f"⚠️ Could not find row for '{label}'")
+        return 0
+    
+    written = 0
+    for section_idx, data in enumerate(data_by_section):
+        col_offset = section_idx * 2
+        target_col = issuer_data_col + col_offset
+        value = format_func(data) if format_func else data
+        ws.cell(row, target_col).value = value
+        written += 1
+    
+    return written
 
 
 def fill_knockout_matrix(
@@ -364,86 +372,50 @@ def fill_knockout_matrix(
     cra_report_date: Optional[str] = None,
     all_subject_names: Optional[list[str]] = None,
     ccris_conduct_counts_by_section: Optional[list[Dict[str, Any]]] = None,
+    trade_amounts_by_section: Optional[list[list[float]]] = None,
 ) -> str:
+    """Fill the knockout matrix Excel template with data."""
     wb = openpyxl.load_workbook(file_path)
     if SHEET_NAME not in wb.sheetnames:
         raise ValueError(f"Sheet '{SHEET_NAME}' not found. Found: {wb.sheetnames}")
 
     ws = wb[SHEET_NAME]
-
-    # 1) Issuer name field is D6 -> E6
-    # Find column to the right of 'Issuer Name:' (in your file: E = 5)
-    issuer_name_value_col = None
+    
+    # Set issuer name
     for r in range(1, 30):
-        v = ws.cell(r, 4).value  # D
-        if isinstance(v, str) and "issuer name" in _norm(v):
-            issuer_name_value_col = 5  # E
+        if isinstance(ws.cell(r, 4).value, str) and "issuer name" in _norm(ws.cell(r, 4).value):
+            set_issuer_name(ws, 5, issuer_name)
             break
-    if issuer_name_value_col:
-        set_issuer_name(ws, issuer_name_value_col, issuer_name)
-
+    
     set_cra_report_dates(ws, cra_report_date)
-
-    # 2) Issuer data column for Knock-Out Items: header 'Issuer' at M6
     issuer_data_col = find_issuer_data_column(ws)
     
-    # Row 7: Insert all Name Of Subject values dynamically
-    # Column L has label "Name", data goes in M, O, Q, S, U, ...  (offset by 2 for each subject)
+    # Insert subject names
     if all_subject_names is None:
         all_subject_names = [issuer_name]
     
     for i, subject_name in enumerate(all_subject_names):
         if subject_name:
-            col_offset = i * 2  # M (0), O (2), Q (4), S (6), U (8), ...
-            ws.cell(7, issuer_data_col + col_offset).value = subject_name
-            print(f"✅ Inserted Name Of Subject {i+1}: '{subject_name}' at Row 7, Column {openpyxl.utils.get_column_letter(issuer_data_col + col_offset)}")
-
-    # 3) Build label row index from column D
+            ws.cell(7, issuer_data_col + i * 2).value = subject_name
+    
     label_index = build_label_row_index(ws, LABEL_COL)
-
-    # 4) Write values into Issuer data column (M, O, Q for multi-column fields)
+    
+    # Write main data
     missing = []
     written = 0
     
-    # Multi-column patterns: maps label base to column offsets [0, 2, 4] for suffixes ["", " 2", " 3"]
-    # These fields will be inserted into three cells (e.g., M, O, Q columns)
-    multi_col_patterns = [
-        "Scoring by CRA Agency (Issuer's Credit Agency Score)",
-        "Scoring by CRA Agency (Credit Score Equivalent)",
-        "Winding Up / Bankruptcy Proceedings Record",
-        "Credit Applications Approved for Last 12 months (per primary CRA report)",
-        "Credit Applications Pending (per primary CRA report)",
-        "Legal Action taken (from Banking) (per primary CRA report)",
-        "Existing No. of Facility (from Banking) (per primary CRA report)",
-        "Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)",
-        "Legal Case - Status (per primary CRA report)",
-        "Trade / Credit Reference (per primary CRA report)",
-        "Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)",
-        "Special Attention Account (per primary CRA report)",
-        "Summary of Total Liabilities (Outstanding) (per primary CRA report)",
-        "Summary of Total Liabilities (Total Limit) (per primary CRA report)",
-        "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)",
-        "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)",
-        "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report)",
-        "CCRIS Loan Account - Conduct Count (per primary CRA report)",
-        "CCRIS Loan Account - Legal Status (per primary CRA report)",
-        "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)",
-        "Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report)",
-    ]
-
     for label, value in data_by_label.items():
         normalized_label = _norm(label)
         row = label_index.get(normalized_label)
         target_col = issuer_data_col
         
-        # Check if this is a multi-column field (with " 2", " 3", " 4", ... suffix)
+        # Check for multi-column fields
         if not row:
-            for pattern in multi_col_patterns:
-                # Check for numbered suffixes dynamically
-                for i in range(2, 20):  # Support up to 20 subjects
+            for pattern in MULTI_COL_PATTERNS:
+                for i in range(2, 20):
                     if normalized_label == _norm(pattern + f" {i}"):
                         row = label_index.get(_norm(pattern))
-                        target_col = issuer_data_col + ((i - 1) * 2)  # Offset by 2 for each subject
+                        target_col = issuer_data_col + (i - 1) * 2
                         break
                 if row:
                     break
@@ -455,95 +427,165 @@ def fill_knockout_matrix(
         ws.cell(row, target_col).value = _format_cell_value(value)
         written += 1
 
-    # 4b) Insert CCRIS Conduct Count MIA values for each section into separate cells
+    # Insert CCRIS Conduct Count
     if ccris_conduct_counts_by_section:
-        ccris_label = "CCRIS Loan Account - Conduct Count (per primary CRA report)"
-        ccris_row = label_index.get(_norm(ccris_label))
-        
-        if ccris_row:
-            for section_idx, section_digit_counts in enumerate(ccris_conduct_counts_by_section):
-                # Each section goes into a column offset by 2 (M, O, Q, S, U, ...)
-                col_offset = section_idx * 2
-                target_col = issuer_data_col + col_offset
-                
-                # Format the MIA counts
-                formatted_value = _format_cell_value(section_digit_counts)
-                ws.cell(ccris_row, target_col).value = formatted_value
-                written += 1
-                
-                col_letter = openpyxl.utils.get_column_letter(target_col)
-                print(f"✅ Inserted Section {section_idx + 1} MIA at Row {ccris_row}, Column {col_letter}")
-        else:
-            print(f"⚠️ Could not find row for '{ccris_label}' - skipping section MIA insertion")
+        written += _insert_section_data(
+            ws, "CCRIS Loan Account - Conduct Count (per primary CRA report)",
+            label_index, issuer_data_col, ccris_conduct_counts_by_section,
+            _format_cell_value
+        )
 
-    # 5) Save output
-    base, ext = os.path.splitext(file_path)
-    output_path = f"{base}_FILLED{ext}"
+    # Insert Trade Amount Due
+    if trade_amounts_by_section:
+        written += _insert_section_data(
+            ws, "Trade / Credit Reference (per primary CRA report)",
+            label_index, issuer_data_col, trade_amounts_by_section,
+            lambda amounts: str(sum(1 for amt in amounts if amt > 10000)) if amounts else "0"
+        )
+
+    # Save output
+    output_path = f"{os.path.splitext(file_path)[0]}_FILLED{os.path.splitext(file_path)[1]}"
     wb.save(output_path)
 
-    print(f"✅ Written {written} cells into Issuer columns (M, O, Q - starting at {openpyxl.utils.get_column_letter(issuer_data_col)}).")
     if missing:
-        print("\n⚠️ Labels not found (not written):")
+        print("⚠️ Missing labels:")
         for m in missing:
-            print(" -", m)
+            print(f"  - {m}")
 
     return output_path
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fill Knockout Matrix Excel from merged credit report data.")
-    parser.add_argument("--excel", help="Path to Knockout Matrix Template.xlsx")
-    parser.add_argument("--merged-json", help="Path to merged JSON output")
-    parser.add_argument("--pdf", help="Path to Experian PDF (opens picker if omitted)")
-    parser.add_argument("--issuer", default=None, help="Issuer name to fill in Excel (defaults to Name Of Subject)")
-    args = parser.parse_args()
-
-    excel_file = resolve_excel_path(args.excel)
-
+def _get_pdf_path(args, merged: Dict[str, Any]) -> Optional[str]:
+    """Get PDF path from arguments or merged data."""
+    if args.pdf:
+        return args.pdf
     if args.merged_json:
-        merged = load_merged_report(args.merged_json)
-    else:
-        pdf_path = resolve_pdf_path(args.pdf)
-        if not pdf_path:
-            print("❌ No PDF selected.")
-            raise SystemExit(1)
-        merged = merge_reports(pdf_path)
+        return merged.get("detailed_credit_report", {}).get("source_pdf") or merged.get("pdf_file")
+    return resolve_pdf_path(args.pdf)
 
-    data = build_knockout_data(merged)
-    summary = merged.get("summary_report", {})
-    issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
-    cra_report_date = summary.get("Last_Updated_By_Experian")
-    print(f"Using CRA report date: {cra_report_date}")
 
-    # Collect all subject names dynamically
-    all_subject_names = [issuer_name]
-    i = 2
-    while True:
-        subject_key = f"Name_Of_Subject_{i}" if i > 1 else "Name_Of_Subject"
-        subject_name = summary.get(subject_key)
-        if subject_name is None:
-            break
-        all_subject_names.append(subject_name)
-        i += 1
-    
-    print(f"✅ Found {len(all_subject_names)} subject(s) to insert into Excel")
-
-    # Extract sections data for MIA insertion
+def _extract_sections_data(merged: Dict[str, Any]):
+    """Extract section data from merged report."""
     detailed = merged.get("detailed_credit_report", {})
     sections = detailed.get("sections", [])
-    ccris_conduct_counts_by_section = []
-    for section in sections:
-        section_analysis = section.get("account_line_analysis", {})
-        section_digit_counts = section_analysis.get("digit_counts_totals", {})
-        if section_digit_counts:
-            ccris_conduct_counts_by_section.append(section_digit_counts)
-    
-    out = fill_knockout_matrix(
-        excel_file, 
-        issuer_name, 
-        data, 
-        cra_report_date=cra_report_date,
-        all_subject_names=all_subject_names,
-        ccris_conduct_counts_by_section=ccris_conduct_counts_by_section if ccris_conduct_counts_by_section else None,
+    return [
+        section.get("account_line_analysis", {}).get("digit_counts_totals", {})
+        for section in sections
+        if section.get("account_line_analysis", {}).get("digit_counts_totals")
+    ]
+
+
+def _get_all_subject_names(summary: Dict[str, Any], issuer_name: str) -> list[str]:
+    """Get all subject names from summary."""
+    names = [issuer_name]
+    i = 2
+    while (name := summary.get(f"Name_Of_Subject_{i}")):
+        names.append(name)
+        i += 1
+    return names
+
+
+def main() -> None:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Fill Knockout Matrix Excel from merged credit report data.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run with file picker (simplest)
+  python insert_excel_file.py
+  
+  # Use specific PDF
+  python insert_excel_file.py --pdf "report.pdf"
+  
+  # Use pre-generated merged JSON (faster)
+  python insert_excel_file.py --merged-json merged.json
+  
+  # Specify Excel template
+  python insert_excel_file.py --excel "template.xlsx"
+        """
     )
-    print("✅ File saved:", out)
+    parser.add_argument("--excel", help="Path to Knockout Matrix Template.xlsx (defaults to template in same directory)")
+    parser.add_argument("--merged-json", help="Path to merged JSON output (skips PDF processing)")
+    parser.add_argument("--pdf", help="Path to Experian PDF (opens picker if omitted)")
+    parser.add_argument("--issuer", help="Issuer name (defaults to Name Of Subject from PDF)")
+    args = parser.parse_args()
+
+    # Get Excel file path
+    excel_file = args.excel or str(Path(__file__).resolve().parent / DEFAULT_EXCEL)
+    if not os.path.exists(excel_file):
+        print(f"❌ Excel template not found: {excel_file}")
+        print(f"💡 Please ensure '{DEFAULT_EXCEL}' exists in the same directory")
+        raise SystemExit(1)
+    
+    # Load or generate merged report
+    if args.merged_json:
+        print("📄 Loading merged report from JSON...")
+        if not os.path.exists(args.merged_json):
+            print(f"❌ Merged JSON file not found: {args.merged_json}")
+            raise SystemExit(1)
+        with open(args.merged_json, "r", encoding="utf-8") as f:
+            merged = json.load(f)
+        pdf_path = merged.get("pdf_file") or merged.get("detailed_credit_report", {}).get("source_pdf")
+        print("✅ Merged report loaded")
+    else:
+        # Get PDF path (opens picker if not provided)
+        pdf_path = resolve_pdf_path(args.pdf)
+        if not pdf_path:
+            print("❌ No PDF file selected")
+            raise SystemExit(1)
+        
+        print(f"📄 Processing PDF: {os.path.basename(pdf_path)}")
+        print("📊 Generating merged report (this may take a moment for large PDFs)...")
+        print("💡 Tip: Save merged JSON with 'python merged_credit_report.py --pdf file.pdf' for faster subsequent runs")
+        merged = merge_reports(pdf_path)
+
+    summary = merged.get("summary_report", {})
+    issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
+    
+    # Build data
+    data = build_knockout_data(merged)
+    ccris_sections = _extract_sections_data(merged)
+    all_names = _get_all_subject_names(summary, issuer_name)
+    
+    # Extract trade amounts (extract PDF text once to avoid memory issues)
+    trade_amounts = None
+    # Get PDF path if not already set
+    if not pdf_path:
+        pdf_path = _get_pdf_path(args, merged)
+    
+    if pdf_path and os.path.exists(pdf_path):
+        try:
+            # Extract PDF text once - reuse for trade extraction
+            print("📄 Extracting trade amounts from PDF...")
+            pdf_text_lines = []
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text() or ""
+                    pdf_text_lines.extend(text.splitlines())
+            
+            trade_amounts = extract_trade_amounts_for_excel(text_lines=pdf_text_lines)
+            if trade_amounts:
+                print(f"✅ Extracted Amount Due from {len(trade_amounts)} trade section(s)")
+        except Exception as e:
+            print(f"⚠️ Could not extract trade amounts: {e}")
+    elif not pdf_path:
+        print("ℹ️  No PDF path available - skipping trade amounts extraction")
+    
+    # Fill Excel
+    print(f"\n📝 Filling Excel template: {os.path.basename(excel_file)}")
+    output = fill_knockout_matrix(
+        excel_file,
+        issuer_name,
+        data,
+        cra_report_date=summary.get("Last_Updated_By_Experian"),
+        all_subject_names=all_names,
+        ccris_conduct_counts_by_section=ccris_sections or None,
+        trade_amounts_by_section=trade_amounts,
+    )
+    print(f"\n✅ Success! File saved: {os.path.basename(output)}")
+    print(f"📁 Location: {os.path.dirname(os.path.abspath(output))}")
+
+
+if __name__ == "__main__":
+    main()

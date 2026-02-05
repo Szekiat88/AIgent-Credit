@@ -1,9 +1,0 @@
-{"pdf_file": "/Users/newuser/Downloads/EVER FRESH CAMERON SDN. BHD._Experian_251028 (1).pdf", "summary_report": {
-    "pdf_file": "/Users/newuser/Downloads/EVER FRESH CAMERON SDN. BHD._Experian_251028 (1).pdf", "i_SCORE": 300, "
-    Incorporation_Year": 2013, "Status": "EXISTING", "Private_Exempt_Company": "N/A", "Winding_Up_Record": 0, 
-    "Credit_Applications_Approved_Last_12_months": 1, "Credit_Applications_Pending": 0, "Legal_Action_taken_from_Banking": 0, 
-    "Existing_No_of_Facility_from_Banking": 35, "Total_Enquiries_Last_12_months": 34, "Special_Attention_Account": 0, "
-    Legal_Suits": 2, "Borrower_Outstanding_RM": 30667835.0, "Borrower_Total_Limit_RM": 34070376.0}, "
-    detailed_credit_report": {"source_pdf": "/Users/newuser/Downloads/EVER FRESH CAMERON SDN. BHD._Experian_251028 (1).pdf",
-     "section": {"start_marker": "DETAILED CREDIT REPORT (BANKING ACCOUNTS)", "end_marker": "CREDIT APPLICATION"},
-      "account_line_analysis": {"amount_totals": {"by_record_no": {"3": 495144.0, "16": 803759.0, "17": 1102802.0, "22": 1638660.0, "23": 1981254.0, "25": 2013001.0, "26": 42661.0, "30": 904684.0, "35": 335358.0}}, "amounts_by_record_no": {}, "first_line_numbers_after_date_by_record_no": {"3": [500000.0], "16": [800000.0], "17": [1100000.0], "22": [1979160.0], "23": [1979160.0], "25": [2000000.0], "26": [50000.0], "30": [800000.0], "35": [0.0]}, "first_line_numbers_after_date_gt_total_by_record_no": {"3": true, "16": false, "17": false, "22": true, "23": false, "25": false, "26": true, "30": false, "35": false}, "digit_counts_totals": {"next_first_numbers_digit_counts_0_1_2_3_5_plus": {"0": 13, "1": 7, "2": 0, "3": 0, "5_plus": 0}, "next_six_numbers_digit_counts_0_1_2_3_5_plus": {"0": 82, "1": 12, "2": 0, "3": 0, "5_plus": 0}}}, "totals": {"total_outstanding_balance": 30667835.0, "total_limit": 34070376.0}}}
