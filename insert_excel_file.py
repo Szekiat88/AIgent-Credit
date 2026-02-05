@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -485,106 +486,157 @@ def _get_all_subject_names(summary: Dict[str, Any], issuer_name: str) -> list[st
     return names
 
 
+def _get_base_path() -> Path:
+    """Get the base path for finding files (works in both script and PyInstaller EXE)."""
+    if getattr(sys, 'frozen', False):
+        # Running as compiled EXE
+        return Path(sys.executable).parent
+    else:
+        # Running as script
+        return Path(__file__).resolve().parent
+
+
+def _find_excel_template(excel_name: str = DEFAULT_EXCEL) -> Optional[str]:
+    """
+    Find the Excel template file. Checks multiple locations:
+    1. PyInstaller temp directory (if bundled)
+    2. Same directory as EXE/script
+    3. Current working directory
+    """
+    search_paths = []
+    
+    # If running as EXE, check PyInstaller's temp directory first
+    if getattr(sys, 'frozen', False):
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        if hasattr(sys, '_MEIPASS'):
+            search_paths.append(Path(sys._MEIPASS))
+        # Also check EXE directory
+        search_paths.append(Path(sys.executable).parent)
+    
+    # Always check current working directory
+    search_paths.append(Path.cwd())
+    
+    # If running as script, also check script directory
+    if not getattr(sys, 'frozen', False):
+        search_paths.append(Path(__file__).resolve().parent)
+    
+    # Search all paths
+    for path in search_paths:
+        excel_path = path / excel_name
+        if excel_path.exists():
+            return str(excel_path)
+    
+    return None
+
+
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Fill Knockout Matrix Excel from merged credit report data.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Run with file picker (simplest)
-  python insert_excel_file.py
-  
-  # Use specific PDF
-  python insert_excel_file.py --pdf "report.pdf"
-  
-  # Use pre-generated merged JSON (faster)
-  python insert_excel_file.py --merged-json merged.json
-  
-  # Specify Excel template
-  python insert_excel_file.py --excel "template.xlsx"
-        """
-    )
-    parser.add_argument("--excel", help="Path to Knockout Matrix Template.xlsx (defaults to template in same directory)")
-    parser.add_argument("--merged-json", help="Path to merged JSON output (skips PDF processing)")
-    parser.add_argument("--pdf", help="Path to Experian PDF (opens picker if omitted)")
-    parser.add_argument("--issuer", help="Issuer name (defaults to Name Of Subject from PDF)")
-    args = parser.parse_args()
+    try:
+        parser = argparse.ArgumentParser(description="Fill Knockout Matrix Excel from merged credit report data.")
+        parser.add_argument("--excel", help="Path to Knockout Matrix Template.xlsx (defaults to template in same directory)")
+        parser.add_argument("--merged-json", help="Path to merged JSON output (skips PDF processing)")
+        parser.add_argument("--pdf", help="Path to Experian PDF (opens picker if omitted)")
+        parser.add_argument("--issuer", help="Issuer name (defaults to Name Of Subject from PDF)")
+        args = parser.parse_args()
 
-    # Get Excel file path
-    excel_file = args.excel or str(Path(__file__).resolve().parent / DEFAULT_EXCEL)
-    if not os.path.exists(excel_file):
-        print(f"❌ Excel template not found: {excel_file}")
-        print(f"💡 Please ensure '{DEFAULT_EXCEL}' exists in the same directory")
-        raise SystemExit(1)
-    
-    # Load or generate merged report
-    if args.merged_json:
-        print("📄 Loading merged report from JSON...")
-        if not os.path.exists(args.merged_json):
-            print(f"❌ Merged JSON file not found: {args.merged_json}")
-            raise SystemExit(1)
-        with open(args.merged_json, "r", encoding="utf-8") as f:
-            merged = json.load(f)
-        pdf_path = merged.get("pdf_file") or merged.get("detailed_credit_report", {}).get("source_pdf")
-        print("✅ Merged report loaded")
-    else:
-        # Get PDF path (opens picker if not provided)
-        pdf_path = resolve_pdf_path(args.pdf)
-        if not pdf_path:
-            print("❌ No PDF file selected")
-            raise SystemExit(1)
+        # Get Excel file path (works in both script and EXE)
+        if args.excel:
+            excel_file = args.excel
+            if not os.path.exists(excel_file):
+                print(f"❌ Excel template not found at specified path: {excel_file}")
+                raise SystemExit(1)
+        else:
+            # Try to find the Excel template automatically
+            excel_file = _find_excel_template()
+            if not excel_file:
+                print(f"❌ Excel template '{DEFAULT_EXCEL}' not found!")
+                print(f"\n💡 Please ensure '{DEFAULT_EXCEL}' is in one of these locations:")
+                if getattr(sys, 'frozen', False):
+                    print(f"   1. Same folder as the EXE: {Path(sys.executable).parent}")
+                    print(f"   2. Current working directory: {Path.cwd()}")
+                else:
+                    print(f"   1. Same folder as the script: {Path(__file__).resolve().parent}")
+                    print(f"   2. Current working directory: {Path.cwd()}")
+                print(f"\n   OR use --excel argument to specify the full path")
+                raise SystemExit(1)
+            print(f"📄 Found Excel template: {excel_file}")
         
-        print(f"📄 Processing PDF: {os.path.basename(pdf_path)}")
-        print("📊 Generating merged report (this may take a moment for large PDFs)...")
-        print("💡 Tip: Save merged JSON with 'python merged_credit_report.py --pdf file.pdf' for faster subsequent runs")
-        merged = merge_reports(pdf_path)
-
-    summary = merged.get("summary_report", {})
-    issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
-    
-    # Build data
-    data = build_knockout_data(merged)
-    ccris_sections = _extract_sections_data(merged)
-    all_names = _get_all_subject_names(summary, issuer_name)
-    
-    # Extract trade amounts (extract PDF text once to avoid memory issues)
-    trade_amounts = None
-    # Get PDF path if not already set
-    if not pdf_path:
-        pdf_path = _get_pdf_path(args, merged)
-    
-    if pdf_path and os.path.exists(pdf_path):
-        try:
-            # Extract PDF text once - reuse for trade extraction
-            print("📄 Extracting trade amounts from PDF...")
-            pdf_text_lines = []
-            with pdfplumber.open(pdf_path) as pdf:
-                for page in pdf.pages:
-                    text = page.extract_text() or ""
-                    pdf_text_lines.extend(text.splitlines())
+        # Load or generate merged report
+        if args.merged_json:
+            print("📄 Loading merged report from JSON...")
+            if not os.path.exists(args.merged_json):
+                print(f"❌ Merged JSON file not found: {args.merged_json}")
+                raise SystemExit(1)
+            with open(args.merged_json, "r", encoding="utf-8") as f:
+                merged = json.load(f)
+            pdf_path = merged.get("pdf_file") or merged.get("detailed_credit_report", {}).get("source_pdf")
+            print("✅ Merged report loaded")
+        else:
+            # Get PDF path (opens picker if not provided)
+            pdf_path = resolve_pdf_path(args.pdf)
+            if not pdf_path:
+                print("❌ No PDF file selected")
+                raise SystemExit(1)
             
-            trade_amounts = extract_trade_amounts_for_excel(text_lines=pdf_text_lines)
-            if trade_amounts:
-                print(f"✅ Extracted Amount Due from {len(trade_amounts)} trade section(s)")
-        except Exception as e:
-            print(f"⚠️ Could not extract trade amounts: {e}")
-    elif not pdf_path:
-        print("ℹ️  No PDF path available - skipping trade amounts extraction")
+            print(f"📄 Processing PDF: {os.path.basename(pdf_path)}")
+            print("📊 Generating merged report (this may take a moment for large PDFs)...")
+            print("💡 Tip: Save merged JSON with 'python merged_credit_report.py --pdf file.pdf' for faster subsequent runs")
+            merged = merge_reports(pdf_path)
+
+        summary = merged.get("summary_report", {})
+        issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
+        
+        # Build data
+        data = build_knockout_data(merged)
+        ccris_sections = _extract_sections_data(merged)
+        all_names = _get_all_subject_names(summary, issuer_name)
+        
+        # Extract trade amounts (extract PDF text once to avoid memory issues)
+        trade_amounts = None
+        # Get PDF path if not already set
+        if not pdf_path:
+            pdf_path = _get_pdf_path(args, merged)
+        
+        if pdf_path and os.path.exists(pdf_path):
+            try:
+                # Extract PDF text once - reuse for trade extraction
+                print("📄 Extracting trade amounts from PDF...")
+                pdf_text_lines = []
+                with pdfplumber.open(pdf_path) as pdf:
+                    for page in pdf.pages:
+                        text = page.extract_text() or ""
+                        pdf_text_lines.extend(text.splitlines())
+                
+                trade_amounts = extract_trade_amounts_for_excel(text_lines=pdf_text_lines)
+                if trade_amounts:
+                    print(f"✅ Extracted Amount Due from {len(trade_amounts)} trade section(s)")
+            except Exception as e:
+                print(f"⚠️ Could not extract trade amounts: {e}")
+        elif not pdf_path:
+            print("ℹ️  No PDF path available - skipping trade amounts extraction")
+        
+        # Fill Excel
+        print(f"\n📝 Filling Excel template: {os.path.basename(excel_file)}")
+        output = fill_knockout_matrix(
+            excel_file,
+            issuer_name,
+            data,
+            cra_report_date=summary.get("Last_Updated_By_Experian"),
+            all_subject_names=all_names,
+            ccris_conduct_counts_by_section=ccris_sections or None,
+            trade_amounts_by_section=trade_amounts,
+        )
+        print(f"\n✅ Success! File saved: {os.path.basename(output)}")
+        print(f"📁 Location: {os.path.dirname(os.path.abspath(output))}")
     
-    # Fill Excel
-    print(f"\n📝 Filling Excel template: {os.path.basename(excel_file)}")
-    output = fill_knockout_matrix(
-        excel_file,
-        issuer_name,
-        data,
-        cra_report_date=summary.get("Last_Updated_By_Experian"),
-        all_subject_names=all_names,
-        ccris_conduct_counts_by_section=ccris_sections or None,
-        trade_amounts_by_section=trade_amounts,
-    )
-    print(f"\n✅ Success! File saved: {os.path.basename(output)}")
-    print(f"📁 Location: {os.path.dirname(os.path.abspath(output))}")
+    except KeyboardInterrupt:
+        print("\n❌ Operation cancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

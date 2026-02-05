@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
@@ -8,7 +7,7 @@ from decimal import Decimal
 
 import pdfplumber
 
-from pdf_utils import pick_pdf_file, parse_decimal, extract_section_lines, extract_all_sections, RE_MONEY
+from pdf_utils import parse_decimal, extract_all_sections, RE_MONEY
 
 
 # =============================
