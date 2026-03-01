@@ -582,6 +582,19 @@ def main() -> None:
 
         summary = merged.get("summary_report", {})
         issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
+
+        # Keep all detected subject names (issuer + directors/guarantors) so they can
+        # be written to the subject header columns in the knockout template.
+        raw_subject_names = summary.get("all_names_of_subject") or []
+        all_subject_names = [
+            re.sub(r"\s+", " ", str(name)).strip()
+            for name in raw_subject_names
+            if name and str(name).strip()
+        ]
+
+        # Ensure issuer is always the first displayed subject.
+        if issuer_name and issuer_name not in all_subject_names:
+            all_subject_names.insert(0, issuer_name)
         
         # Build data
         data = build_knockout_data(merged)
@@ -614,6 +627,7 @@ def main() -> None:
             issuer_name,
             data,
             cra_report_date=summary.get("Last_Updated_By_Experian"),
+            all_subject_names=all_subject_names or None,
             ccris_conduct_counts_by_section=ccris_sections or None,
         )
         print(f"\n✅ Success! File saved: {os.path.basename(output)}")
