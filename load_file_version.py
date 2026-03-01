@@ -162,32 +162,44 @@ def extract_int_after_label_all(label: str, text: str) -> list[Optional[int]]:
 
 def extract_financial_related_search_count_all(text: str) -> list[Optional[int]]:
     """
-    Extract all "FINANCIAL RELATED SEARCH COUNT" blocks and return the
-    latest-year total for each block.
+    Extract all "FINANCIAL RELATED SEARCH COUNT" blocks and return,
+    for each block, the highest month value (Jan..Dec) from the latest year.
 
     Example block:
       Year Total Jan ... Dec
-      2025 3 ...
-      2024 1 ...
+      2025 3 2 0 ... 1 0 0
+      2024 1 0 0 ...
 
-    Output for that block => 3 (total of latest year 2025).
+    Output for that block => 2 (max across Jan..Dec of latest year 2025).
     """
     block_pattern = re.compile(
         r"FINANCIAL\s+RELATED\s+SEARCH\s+COUNT\s*:?\s*(.*?)"
         r"(?=COMMERCIAL\s+RELATED\s+SEARCH\s+COUNT)",
         re.IGNORECASE | re.DOTALL,
     )
-    row_pattern = re.compile(r"\b(20\d{2})\b\s+([0-9]+)\b")
+    row_pattern = re.compile(r"^\s*(20\d{2})\b.*$", re.MULTILINE)
 
     values: list[Optional[int]] = []
     for block in block_pattern.findall(text):
-        rows = [(int(year), int(total)) for year, total in row_pattern.findall(block)]
-        if not rows:
+        row_values: list[tuple[int, Optional[int]]] = []
+
+        for row_match in row_pattern.finditer(block):
+            row = row_match.group(0)
+            year = int(row_match.group(1))
+            nums = [int(token) for token in re.findall(r"\d+", row)]
+
+            # Expected row format: Year Total Jan Feb ... Dec
+            # Exclude Year and Total, then evaluate only Jan..Dec values.
+            month_values = nums[2:14] if len(nums) >= 14 else nums[2:]
+            highest_month = max(month_values) if month_values else None
+            row_values.append((year, highest_month))
+
+        if not row_values:
             values.append(None)
             continue
 
-        _, latest_total = max(rows, key=lambda item: item[0])
-        values.append(latest_total)
+        _, latest_highest_month = max(row_values, key=lambda item: item[0])
+        values.append(latest_highest_month)
 
     return values if values else [None]
 
