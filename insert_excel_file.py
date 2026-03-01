@@ -396,19 +396,32 @@ def fill_knockout_matrix(
     if all_subject_names is None:
         all_subject_names = [issuer_name]
 
-    # Detect available subject columns from the header row so we do not write
-    # names into unrelated columns when the template only defines a subset.
-    # (Issuer + Director / Guarantor columns are every 2 columns apart.)
+    # Detect available subject columns by scanning all columns to the right of
+    # the Issuer header. Some templates place subject columns contiguously
+    # (no 2-column spacing), so avoid assuming a fixed stride.
     subject_cols: list[int] = []
-    for c in range(issuer_data_col, ws.max_column + 1, 2):
+    subject_keywords = ("issuer", "director", "guarantor", "key person")
+    for c in range(issuer_data_col, ws.max_column + 1):
         header_values = [ws.cell(r, c).value for r in range(1, 12)]
-        header_text = " ".join(str(v) for v in header_values if isinstance(v, str)).lower()
-        if any(k in header_text for k in ("issuer", "director", "guarantor", "key person")):
+        header_text = _norm(" ".join(str(v) for v in header_values if isinstance(v, str)))
+        if any(k in header_text for k in subject_keywords):
             subject_cols.append(c)
 
+    # Some templates keep the 2-column spaced structure. If keyword scan finds
+    # fewer than two subject columns while multiple names exist, probe using the
+    # original stride as a compatibility fallback.
+    if len(subject_cols) < 2 and len(all_subject_names) > 1:
+        for c in range(issuer_data_col, ws.max_column + 1, 2):
+            header_values = [ws.cell(r, c).value for r in range(1, 12)]
+            header_text = _norm(" ".join(str(v) for v in header_values if isinstance(v, str)))
+            if any(k in header_text for k in subject_keywords) and c not in subject_cols:
+                subject_cols.append(c)
+
     if not subject_cols:
-        # Fallback to the original behavior if the template headers are unusual.
+        # Last fallback: preserve previous behavior so at least the issuer is set.
         subject_cols = [issuer_data_col + i * 2 for i in range(min(3, len(all_subject_names)))]
+
+    subject_cols = sorted(subject_cols)
 
     for i, subject_name in enumerate(all_subject_names[:len(subject_cols)]):
         if subject_name:
@@ -582,6 +595,19 @@ def main() -> None:
 
         summary = merged.get("summary_report", {})
         issuer_name = args.issuer or summary.get("Name_Of_Subject") or "UNKNOWN ISSUER"
+
+        # Keep all detected subject names (issuer + directors/guarantors) so they can
+        # be written to the subject header columns in the knockout template.
+        raw_subject_names = summary.get("all_names_of_subject") or []
+        all_subject_names = [
+            re.sub(r"\s+", " ", str(name)).strip()
+            for name in raw_subject_names
+            if name and str(name).strip()
+        ]
+
+        # Ensure issuer is always the first displayed subject.
+        if issuer_name and issuer_name not in all_subject_names:
+            all_subject_names.insert(0, issuer_name)
         
         # Build data
         data = build_knockout_data(merged)
@@ -614,6 +640,7 @@ def main() -> None:
             issuer_name,
             data,
             cra_report_date=summary.get("Last_Updated_By_Experian"),
+            all_subject_names=all_subject_names or None,
             ccris_conduct_counts_by_section=ccris_sections or None,
         )
         print(f"\n✅ Success! File saved: {os.path.basename(output)}")
