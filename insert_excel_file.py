@@ -394,10 +394,34 @@ def fill_knockout_matrix(
     # Insert subject names
     if all_subject_names is None:
         all_subject_names = [issuer_name]
-    
-    for i, subject_name in enumerate(all_subject_names):
+
+    # Detect available subject columns from the header row so we do not write
+    # names into unrelated columns when the template only defines a subset.
+    # (Issuer + Director / Guarantor columns are every 2 columns apart.)
+    subject_cols: list[int] = []
+    for c in range(issuer_data_col, ws.max_column + 1, 2):
+        header_values = [ws.cell(r, c).value for r in range(1, 12)]
+        header_text = " ".join(str(v) for v in header_values if isinstance(v, str)).lower()
+        if any(k in header_text for k in ("issuer", "director", "guarantor", "key person")):
+            subject_cols.append(c)
+
+    if not subject_cols:
+        # Fallback to the original behavior if the template headers are unusual.
+        subject_cols = [issuer_data_col + i * 2 for i in range(min(3, len(all_subject_names)))]
+
+    for i, subject_name in enumerate(all_subject_names[:len(subject_cols)]):
         if subject_name:
-            ws.cell(7, issuer_data_col + i * 2).value = subject_name
+            ws.cell(7, subject_cols[i]).value = subject_name
+
+    # Keep overflow names visible instead of silently dropping them.
+    if len(all_subject_names) > len(subject_cols) and subject_cols:
+        overflow = [n for n in all_subject_names[len(subject_cols):] if n]
+        if overflow:
+            last_col = subject_cols[-1]
+            existing = ws.cell(7, last_col).value
+            existing_text = f"{existing}" if existing else ""
+            overflow_text = " ; ".join(overflow)
+            ws.cell(7, last_col).value = f"{existing_text} ; {overflow_text}" if existing_text else overflow_text
     
     label_index = build_label_row_index(ws, LABEL_COL)
     
@@ -478,12 +502,41 @@ def _extract_sections_data(merged: Dict[str, Any]):
 
 def _get_all_subject_names(summary: Dict[str, Any], issuer_name: str) -> list[str]:
     """Get all subject names from summary."""
-    names = [issuer_name]
-    i = 2
-    while (name := summary.get(f"Name_Of_Subject_{i}")):
-        names.append(name)
-        i += 1
-    return names
+    names: list[str] = []
+
+    # Preferred source: explicit list captured by extractor.
+    all_names = summary.get("all_names_of_subject")
+    if isinstance(all_names, list):
+        names.extend([n for n in all_names if isinstance(n, str) and n.strip()])
+
+    # Add canonical keyed fields (works even if indices are non-contiguous).
+    keyed_names: Dict[int, str] = {}
+    for key, value in summary.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if key == "Name_Of_Subject":
+            keyed_names[1] = value
+            continue
+        match = re.fullmatch(r"Name_Of_Subject_(\d+)", key)
+        if match:
+            keyed_names[int(match.group(1))] = value
+
+    for _, value in sorted(keyed_names.items()):
+        names.append(value)
+
+    # Final fallback: at least include issuer name.
+    if not names and issuer_name:
+        names = [issuer_name]
+
+    # De-duplicate while preserving order.
+    seen = set()
+    unique_names = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            unique_names.append(n)
+
+    return unique_names
 
 
 def _get_base_path() -> Path:

@@ -537,6 +537,7 @@ def extract_fields(pdf_path: str) -> dict:
         "Status": extract_word_after_label("Status", text),
         "Private_Exempt_Company": extract_word_after_label("Private Exempt Company", text),
         "Last_Updated_By_Experian": extract_last_updated_by_experian(text),
+        "all_names_of_subject": all_names_of_subject,
     }
     
     # Helper function to add multi-subject fields
