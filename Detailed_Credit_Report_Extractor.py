@@ -73,7 +73,7 @@ def _digit_counts(value: str) -> Dict[str, int]:
     for ch in value:
         if ch in {"0", "1", "2", "3"}:
             counts[ch] += 1
-        elif ch.isdigit() and ch >= "5":
+        elif ch.isdigit() and ch >= "4":
             counts["5_plus"] += 1
     return counts
 

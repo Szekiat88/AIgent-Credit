@@ -109,7 +109,9 @@ def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
 def _format_cell_value(value: Any) -> Any:
     """Format cell value for Excel insertion."""
     if isinstance(value, dict):
+        print(f"⚠️ Warning: Complex dict value for cell, attempting to format: {value}")
         mia_counts = _format_mia_counts(value)
+        print(f"⚠️ Formatted MIA counts: {mia_counts}")
         return mia_counts if mia_counts else json.dumps(value, ensure_ascii=False)
     if isinstance(value, list):
         return json.dumps(value, ensure_ascii=False)

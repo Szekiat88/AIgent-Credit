@@ -345,7 +345,7 @@ def extract_trade_credit_amount_due_all(text: str) -> list[Optional[float]]:
     # Find all sections with "TRADE / CREDIT REFERENCE"
     section_pattern = r"TRADE\s*/\s*CREDIT\s+REFERENCE\s*\(CR\)(.*?)(?=AML\s*/\s*Sanction\s+List|$)"
     sections = re.findall(section_pattern, text, re.IGNORECASE | re.DOTALL)
-    print(f"✅ Found {sections} 'TRADE / CREDIT REFERENCE' section(s)")
+    # print(f"✅ Found {sections} 'TRADE / CREDIT REFERENCE' section(s)")
     all_amounts = []
     
     for section in sections:
