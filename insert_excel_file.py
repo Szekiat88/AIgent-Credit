@@ -15,7 +15,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from merged_credit_report import merge_reports, resolve_pdf_path
 from pdf_utils import pick_excel_file
-from extract_amount_due import extract_trade_amounts_for_excel
 import pdfplumber
 
 SHEET_NAME = "Knock-Out"
@@ -258,6 +257,8 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     add_multi_subject_data("Legal Action taken (from Banking) (per primary CRA report)", "Legal_Action_taken_from_Banking", _format_number)
     add_multi_subject_data("Existing No. of Facility (from Banking) (per primary CRA report)", "Existing_No_of_Facility_from_Banking", _format_number)
     add_multi_subject_data("Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)", "Legal_Suits", _format_number)
+    add_multi_subject_data("Trade / Credit Reference (per primary CRA report)", "Trade_Credit_Reference", _format_number)
+
     
     # Legal Case Status
     for i in range(1, num_subjects + 1):
@@ -460,14 +461,6 @@ def fill_knockout_matrix(
             _format_cell_value
         )
 
-    # Insert Trade Amount Due
-    if trade_amounts_by_section:
-        written += _insert_section_data(
-            ws, "Trade / Credit Reference (per primary CRA report)",
-            label_index, issuer_data_col, trade_amounts_by_section,
-            lambda amounts: str(sum(1 for amt in amounts if amt > 10000)) if amounts else "0"
-        )
-
     # Save output
     output_path = f"{os.path.splitext(file_path)[0]}_FILLED{os.path.splitext(file_path)[1]}"
     wb.save(output_path)
@@ -498,55 +491,6 @@ def _extract_sections_data(merged: Dict[str, Any]):
         for section in sections
         if section.get("account_line_analysis", {}).get("digit_counts_totals")
     ]
-
-
-def _get_all_subject_names(summary: Dict[str, Any], issuer_name: str) -> list[str]:
-    """Get all subject names from summary."""
-    names: list[str] = []
-
-    # Preferred source: explicit list captured by extractor.
-    all_names = summary.get("all_names_of_subject")
-    if isinstance(all_names, list):
-        names.extend([n for n in all_names if isinstance(n, str) and n.strip()])
-
-    # Add canonical keyed fields (works even if indices are non-contiguous).
-    keyed_names: Dict[int, str] = {}
-    for key, value in summary.items():
-        if not isinstance(value, str) or not value.strip():
-            continue
-        if key == "Name_Of_Subject":
-            keyed_names[1] = value
-            continue
-        match = re.fullmatch(r"Name_Of_Subject_(\d+)", key)
-        if match:
-            keyed_names[int(match.group(1))] = value
-
-    for _, value in sorted(keyed_names.items()):
-        names.append(value)
-
-    # Final fallback: at least include issuer name.
-    if not names and issuer_name:
-        names = [issuer_name]
-
-    # De-duplicate while preserving order.
-    seen = set()
-    unique_names = []
-    for n in names:
-        if n not in seen:
-            seen.add(n)
-            unique_names.append(n)
-
-    return unique_names
-
-
-def _get_base_path() -> Path:
-    """Get the base path for finding files (works in both script and PyInstaller EXE)."""
-    if getattr(sys, 'frozen', False):
-        # Running as compiled EXE
-        return Path(sys.executable).parent
-    else:
-        # Running as script
-        return Path(__file__).resolve().parent
 
 
 def _find_excel_template(excel_name: str = DEFAULT_EXCEL) -> Optional[str]:
@@ -642,31 +586,26 @@ def main() -> None:
         # Build data
         data = build_knockout_data(merged)
         ccris_sections = _extract_sections_data(merged)
-        all_names = _get_all_subject_names(summary, issuer_name)
         
         # Extract trade amounts (extract PDF text once to avoid memory issues)
-        trade_amounts = None
         # Get PDF path if not already set
         if not pdf_path:
             pdf_path = _get_pdf_path(args, merged)
         
         if pdf_path and os.path.exists(pdf_path):
+            # Read the PDF once; share the text for all subsequent extractions.
+            pdf_text_lines: List[str] = []
             try:
-                # Extract PDF text once - reuse for trade extraction
-                print("📄 Extracting trade amounts from PDF...")
-                pdf_text_lines = []
+                print("📄 Reading PDF text...")
                 with pdfplumber.open(pdf_path) as pdf:
                     for page in pdf.pages:
-                        text = page.extract_text() or ""
-                        pdf_text_lines.extend(text.splitlines())
-                
-                trade_amounts = extract_trade_amounts_for_excel(text_lines=pdf_text_lines)
-                if trade_amounts:
-                    print(f"✅ Extracted Amount Due from {len(trade_amounts)} trade section(s)")
+                        pdf_text_lines.extend((page.extract_text() or "").splitlines())
             except Exception as e:
-                print(f"⚠️ Could not extract trade amounts: {e}")
+                print(f"⚠️ Could not read PDF: {e}")
+
+         
         elif not pdf_path:
-            print("ℹ️  No PDF path available - skipping trade amounts extraction")
+            print("ℹ️  No PDF path available - skipping PDF extractions")
         
         # Fill Excel
         print(f"\n📝 Filling Excel template: {os.path.basename(excel_file)}")
@@ -675,9 +614,7 @@ def main() -> None:
             issuer_name,
             data,
             cra_report_date=summary.get("Last_Updated_By_Experian"),
-            all_subject_names=all_names,
             ccris_conduct_counts_by_section=ccris_sections or None,
-            trade_amounts_by_section=trade_amounts,
         )
         print(f"\n✅ Success! File saved: {os.path.basename(output)}")
         print(f"📁 Location: {os.path.dirname(os.path.abspath(output))}")

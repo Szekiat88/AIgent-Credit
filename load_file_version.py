@@ -336,25 +336,6 @@ def extract_borrower_liabilities_all(text: str) -> list[tuple[Optional[float], O
     return all_liabilities
 
 
-def extract_trade_credit_amount_due(text: str) -> Optional[float]:
-    """Extract first trade credit amount due (sum of all amounts in first section)."""
-    section = extract_text_between_headers(
-        "TRADE / CREDIT REFERENCE (CR)",
-        "LEGEND",
-        text,
-    )
-    if not section:
-        return None
-    amounts = re.findall(
-        r"Amount\s+Due\s*[:\-]?\s*([0-9][0-9,]*(?:\.\d{2})?)",
-        section,
-        re.IGNORECASE,
-    )
-    if not amounts:
-        return None
-    return sum(parse_money(amount) or 0 for amount in amounts)
-
-
 def extract_trade_credit_amount_due_all(text: str) -> list[Optional[float]]:
     """
     Extract ALL trade credit amount due occurrences.
@@ -362,9 +343,9 @@ def extract_trade_credit_amount_due_all(text: str) -> list[Optional[float]]:
     Returns dynamic length list based on how many sections are found.
     """
     # Find all sections with "TRADE / CREDIT REFERENCE"
-    section_pattern = r"TRADE\s*/\s*CREDIT\s+REFERENCE.*?(?=\n[A-Z][A-Z &/\-]{10,}\n|LEGEND|$)"
+    section_pattern = r"TRADE\s*/\s*CREDIT\s+REFERENCE\s*\(CR\)(.*?)(?=AML\s*/\s*Sanction\s+List|$)"
     sections = re.findall(section_pattern, text, re.IGNORECASE | re.DOTALL)
-    
+    print(f"✅ Found {sections} 'TRADE / CREDIT REFERENCE' section(s)")
     all_amounts = []
     
     for section in sections:
@@ -374,11 +355,19 @@ def extract_trade_credit_amount_due_all(text: str) -> list[Optional[float]]:
             re.IGNORECASE,
         )
         if amounts:
-            total = sum(parse_money(amount) or 0 for amount in amounts)
-            all_amounts.append(total if total > 0 else None)
+            print(f"   ✅ Found amounts in section: {amounts}")
+            
+            count_over_10k = 0
+            
+            for amount in amounts:
+                value = parse_money(amount) or 0
+                if value > 10000:
+                    count_over_10k += 1
+
+            all_amounts.append(count_over_10k if count_over_10k > 0 else None)
+
         else:
             all_amounts.append(None)
-    
     # Ensure we have at least one element
     if not all_amounts:
         all_amounts = [None]
@@ -527,9 +516,9 @@ def extract_fields(pdf_path: str) -> dict:
 
     target_subject_count = len(all_names_of_subject)
     all_total_enquiries = _fit_list_length(all_total_enquiries, target_subject_count)
-    
-    print(f"✅ Found {len(all_names_of_subject)} subject(s) in PDF")
-    
+    print(f"✅ Extracted all_names_of_subject: {all_names_of_subject}")
+    print(f"✅ Extracted all_trade_credit: {str(all_trade_credit)}")
+        
     # Build result dictionary dynamically
     result = {
         "pdf_file": pdf_path,
@@ -557,7 +546,7 @@ def extract_fields(pdf_path: str) -> dict:
     add_multi_subject_field("Total_Enquiries_Last_12_months", all_total_enquiries)
     add_multi_subject_field("Special_Attention_Account", all_special_attention)
     add_multi_subject_field("Legal_Suits", all_legal_suits)
-    add_multi_subject_field("extract_trade_credit_amount_dueextract_trade_credit_amount_due", all_trade_credit)
+    add_multi_subject_field("Trade_Credit_Reference", all_trade_credit)
     
     # Add borrower liabilities (Outstanding and Total Limit)
     for i, (outstanding, limit) in enumerate(all_liabilities):

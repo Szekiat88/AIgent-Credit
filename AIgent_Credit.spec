@@ -1,26 +1,46 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
+
+# Collect all pdfplumber data and binaries
+datas_pdfplumber, binaries_pdfplumber, hiddenimports_pdfplumber = collect_all('pdfplumber')
 
 a = Analysis(
     ['insert_excel_file.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries_pdfplumber,
     datas=[
         ('Knockout Matrix Template.xlsx', '.'),
-    ],
+    ] + datas_pdfplumber,
     hiddenimports=[
         'openpyxl',
         'pdfplumber',
+        'pdfplumber.pdf',
+        'pdfplumber.page',
+        'pdfplumber.table',
+        'pdfplumber.utils',
+        'PIL',
+        'PIL.Image',
+        'pypdf',
+        'pypdf._reader',
+        'pypdf._writer',
+        'pypdf.generic',
+        'pypdf.constants',
+        'pypdf.errors',
+        'pypdf.pdf',
+        'pypdf.utils',
+        'pypdf._encryption',
+        'pypdf._page',
+        'pypdf._merger',
         'tkinter',
         'tkinter.filedialog',
         'merged_credit_report',
         'pdf_utils',
-        'extract_amount_due',
         'Detailed_Credit_Report_Extractor',
         'Non_Bank_Lender_Credit_Information',
         'load_file_version',
-    ],
+    ] + hiddenimports_pdfplumber,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
