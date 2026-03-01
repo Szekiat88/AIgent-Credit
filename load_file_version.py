@@ -160,6 +160,59 @@ def extract_int_after_label_all(label: str, text: str) -> list[Optional[int]]:
     return values
 
 
+def extract_financial_related_search_count_all(text: str) -> list[Optional[int]]:
+    """
+    Extract all "FINANCIAL RELATED SEARCH COUNT" blocks and return,
+    for each block, the highest month value (Jan..Dec) from the latest year.
+
+    Example block:
+      Year Total Jan ... Dec
+      2025 3 2 0 ... 1 0 0
+      2024 1 0 0 ...
+
+    Output for that block => 2 (max across Jan..Dec of latest year 2025).
+    """
+    block_pattern = re.compile(
+        r"FINANCIAL\s+RELATED\s+SEARCH\s+COUNT\s*:?\s*(.*?)"
+        r"(?=COMMERCIAL\s+RELATED\s+SEARCH\s+COUNT)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    row_pattern = re.compile(r"^\s*(20\d{2})\b.*$", re.MULTILINE)
+
+    values: list[Optional[int]] = []
+    for block in block_pattern.findall(text):
+        row_values: list[tuple[int, Optional[int]]] = []
+
+        for row_match in row_pattern.finditer(block):
+            row = row_match.group(0)
+            year = int(row_match.group(1))
+            nums = [int(token) for token in re.findall(r"\d+", row)]
+
+            # Expected row format: Year Total Jan Feb ... Dec
+            # Exclude Year and Total, then evaluate only Jan..Dec values.
+            month_values = nums[2:14] if len(nums) >= 14 else nums[2:]
+            highest_month = max(month_values) if month_values else None
+            row_values.append((year, highest_month))
+
+        if not row_values:
+            values.append(None)
+            continue
+
+        _, latest_highest_month = max(row_values, key=lambda item: item[0])
+        values.append(latest_highest_month)
+
+    return values if values else [None]
+
+
+def _fit_list_length(values: list, target_len: int) -> list:
+    """Trim or pad with None so list length matches target_len."""
+    if target_len <= 0:
+        return values
+    if len(values) >= target_len:
+        return values[:target_len]
+    return values + [None] * (target_len - len(values))
+
+
 def extract_legal_suits_all(text: str) -> list[Optional[int]]:
     """
     Extract ALL Legal Suits occurrences.
@@ -466,11 +519,14 @@ def extract_fields(pdf_path: str) -> dict:
     all_credit_apps_pending = extract_int_after_label_all("Credit Applications Pending", text)
     all_legal_action = extract_int_after_label_all("Legal Action taken (from Banking)", text)
     all_existing_facility = extract_int_after_label_all("Existing No. of Facility (from Banking)", text)
-    all_total_enquiries = extract_int_after_label_all("Total Enquiries for Last 12 months", text)
+    all_total_enquiries = extract_financial_related_search_count_all(text)
     all_special_attention = extract_int_after_label_all("Special Attention Account", text)
     all_legal_suits = extract_legal_suits_all(text)
     all_liabilities = extract_borrower_liabilities_all(text)
     all_trade_credit = extract_trade_credit_amount_due_all(text)
+
+    target_subject_count = len(all_names_of_subject)
+    all_total_enquiries = _fit_list_length(all_total_enquiries, target_subject_count)
     
     print(f"✅ Found {len(all_names_of_subject)} subject(s) in PDF")
     
@@ -515,4 +571,3 @@ def extract_fields(pdf_path: str) -> dict:
             result[f"{key}{suffix}"] = value
     
     return result
-
