@@ -42,6 +42,29 @@ def _extract_mia_count(text: str, key: str) -> int:
     return int(m.group(1)) if m else 0
 
 
+def _extract_mia_count_at_or_above_in_segment(text: str, segment: str, min_level: int) -> int:
+    """Sum MIA counts at or above a level within a segment (e.g., MIA2+ in past 6 months)."""
+    seg_pattern = re.compile(
+        rf"{re.escape(segment)}(.*?)(?:and\s*/?or|$)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    m = seg_pattern.search(text)
+    scoped = m.group(1) if m else text
+
+    total = 0
+    for level in range(min_level, 5):
+        key = f"mia{level}"
+        total += _extract_mia_count(scoped, key)
+
+    # Include any "MIA4+" style notation when min_level <= 4
+    if min_level <= 4:
+        plus_match = re.search(r"mia\s*4\s*\+\s*[:=]\s*(\d+)", scoped, re.IGNORECASE)
+        if plus_match:
+            total = total - _extract_mia_count(scoped, "mia4") + int(plus_match.group(1))
+
+    return total
+
+
 def _matches_criteria(criteria: str, value: object, label: str) -> bool:
     c = _norm(criteria)
     v = _norm(value)
@@ -71,6 +94,14 @@ def _matches_criteria(criteria: str, value: object, label: str) -> bool:
     if c == "yes":
         return v.startswith("yes")
 
+    if "mia2" in c and "mia1" in c:
+        # Rule interpretation:
+        # - "past 6 months > 2 times MIA2" means MIA2 and above (MIA2+)
+        # - "current 1 month > 4 times MIA1" means MIA1 and above (MIA1+)
+        past_6_mia2_plus = _extract_mia_count_at_or_above_in_segment(v, "past 6 months", 2)
+        current_1_mia1_plus = _extract_mia_count_at_or_above_in_segment(v, "current 1 month", 1)
+        return past_6_mia2_plus > 2 or current_1_mia1_plus > 4
+
     if c.startswith("≥"):
         threshold = _num(c)
         return threshold is not None and n is not None and n >= threshold
@@ -93,11 +124,6 @@ def _matches_criteria(criteria: str, value: object, label: str) -> bool:
         amount = _num(value)
         has_count = bool(re.search(r"\b[2-9]\b", v))
         return has_count and amount is not None and amount > 10000
-
-    if "mia2" in c and "mia1" in c:
-        mia2 = _extract_mia_count(v, "mia2")
-        mia1 = _extract_mia_count(v, "mia1")
-        return mia2 > 2 or mia1 > 4
 
     # Unhandled criteria: leave unhighlighted.
     return False
