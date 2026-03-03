@@ -17,6 +17,8 @@ from merged_credit_report import merge_reports, resolve_pdf_path
 from pdf_utils import pick_excel_file
 import pdfplumber
 
+from column_l_validator import apply_column_l_highlighting
+
 SHEET_NAME = "Knock-Out"
 LABEL_COL = 4  # Column D
 DEFAULT_EXCEL = "Knockout Matrix Template.xlsx"
@@ -412,9 +414,12 @@ def fill_knockout_matrix(
         # Fallback to the original behavior if the template headers are unusual.
         subject_cols = [issuer_data_col + i * 2 for i in range(min(3, len(all_subject_names)))]
 
+    inserted_subject_cols: list[int] = []
     for i, subject_name in enumerate(all_subject_names[:len(subject_cols)]):
         if subject_name:
-            ws.cell(7, subject_cols[i]).value = subject_name
+            col = subject_cols[i]
+            ws.cell(7, col).value = subject_name
+            inserted_subject_cols.append(col)
 
     # Keep overflow names visible instead of silently dropping them.
     if len(all_subject_names) > len(subject_cols) and subject_cols:
@@ -462,6 +467,11 @@ def fill_knockout_matrix(
             label_index, issuer_data_col, ccris_conduct_counts_by_section,
             _format_cell_value
         )
+
+    # Apply Column L coloring immediately after insertion, only for columns inserted this run.
+    cols_to_color = inserted_subject_cols or subject_cols
+    highlighted = apply_column_l_highlighting(ws, cols_to_color)
+    print(f"🎨 Column L coloring applied: {highlighted} cell(s) highlighted across {len(cols_to_color)} subject column(s)")
 
     # Save output
     output_path = f"{os.path.splitext(file_path)[0]}_FILLED{os.path.splitext(file_path)[1]}"

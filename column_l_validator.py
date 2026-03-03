@@ -53,14 +53,12 @@ def _extract_mia_count_at_or_above_in_segment(text: str, segment: str, min_level
 
     total = 0
     for level in range(min_level, 5):
-        key = f"mia{level}"
-        total += _extract_mia_count(scoped, key)
+        total += _extract_mia_count(scoped, f"mia{level}")
 
-    # Include any "MIA4+" style notation when min_level <= 4
-    if min_level <= 4:
-        plus_match = re.search(r"mia\s*4\s*\+\s*[:=]\s*(\d+)", scoped, re.IGNORECASE)
-        if plus_match:
-            total = total - _extract_mia_count(scoped, "mia4") + int(plus_match.group(1))
+    # Prefer explicit MIA4+ when present.
+    plus_match = re.search(r"mia\s*4\s*\+\s*[:=]\s*(\d+)", scoped, re.IGNORECASE)
+    if plus_match:
+        total = total - _extract_mia_count(scoped, "mia4") + int(plus_match.group(1))
 
     return total
 
@@ -83,9 +81,8 @@ def _matches_criteria(criteria: str, value: object, label: str) -> bool:
         return False
 
     if c == "no":
-        if "business has been in operations" in _norm(label):
-            if n is not None:
-                return n < 3
+        if "business has been in operations" in _norm(label) and n is not None:
+            return n < 3
         return v.startswith("no") or v in {"0", "false"}
 
     if "other than \"existing\"" in c:
@@ -95,9 +92,7 @@ def _matches_criteria(criteria: str, value: object, label: str) -> bool:
         return v.startswith("yes")
 
     if "mia2" in c and "mia1" in c:
-        # Rule interpretation:
-        # - "past 6 months > 2 times MIA2" means MIA2 and above (MIA2+)
-        # - "current 1 month > 4 times MIA1" means MIA1 and above (MIA1+)
+        # past 6 months: MIA2+, current 1 month: MIA1+
         past_6_mia2_plus = _extract_mia_count_at_or_above_in_segment(v, "past 6 months", 2)
         current_1_mia1_plus = _extract_mia_count_at_or_above_in_segment(v, "current 1 month", 1)
         return past_6_mia2_plus > 2 or current_1_mia1_plus > 4
@@ -125,11 +120,11 @@ def _matches_criteria(criteria: str, value: object, label: str) -> bool:
         has_count = bool(re.search(r"\b[2-9]\b", v))
         return has_count and amount is not None and amount > 10000
 
-    # Unhandled criteria: leave unhighlighted.
     return False
 
 
-def _subject_columns(ws: Worksheet, start_col: int = 13) -> list[int]:
+def detect_subject_columns(ws: Worksheet, start_col: int = 13) -> list[int]:
+    """Detect subject data columns from header keywords."""
     cols: list[int] = []
     for c in range(start_col, ws.max_column + 1):
         text = " ".join(_norm(ws.cell(r, c).value) for r in range(1, HEADER_SCAN_ROWS + 1))
@@ -138,11 +133,18 @@ def _subject_columns(ws: Worksheet, start_col: int = 13) -> list[int]:
     return cols
 
 
-def highlight_matches(file_path: str, output_path: Optional[str] = None) -> str:
-    wb = openpyxl.load_workbook(file_path)
-    ws = wb[SHEET_NAME]
+def apply_column_l_highlighting(ws: Worksheet, subject_cols: Optional[list[int]] = None) -> int:
+    """Apply yellow fill when subject values meet Column L criteria.
 
-    subjects = _subject_columns(ws)
+    Args:
+        ws: Knock-Out worksheet.
+        subject_cols: Optional explicit list of subject columns to evaluate.
+                     If omitted, columns are auto-detected.
+
+    Returns:
+        Number of highlighted cells.
+    """
+    columns = subject_cols or detect_subject_columns(ws)
     highlighted = 0
 
     for row in range(11, ws.max_row + 1):
@@ -150,11 +152,20 @@ def highlight_matches(file_path: str, output_path: Optional[str] = None) -> str:
         criteria = ws.cell(row, CRITERIA_COL).value
         if not criteria:
             continue
-        for col in subjects:
+        for col in columns:
             cell = ws.cell(row, col)
             if _matches_criteria(str(criteria), cell.value, str(label or "")):
                 cell.fill = YELLOW_FILL
                 highlighted += 1
+
+    return highlighted
+
+
+def highlight_matches(file_path: str, output_path: Optional[str] = None) -> str:
+    wb = openpyxl.load_workbook(file_path)
+    ws = wb[SHEET_NAME]
+
+    highlighted = apply_column_l_highlighting(ws)
 
     if not output_path:
         src = Path(file_path)
