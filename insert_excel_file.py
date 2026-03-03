@@ -400,19 +400,19 @@ def fill_knockout_matrix(
     if all_subject_names is None:
         all_subject_names = [issuer_name]
 
-    # Detect available subject columns from the header row so we do not write
-    # names into unrelated columns when the template only defines a subset.
-    # (Issuer + Director / Guarantor columns are every 2 columns apart.)
+    # Always map subject names in +2 column steps (issuer, subject_2, subject_3, ...)
+    # so every extracted name gets its own slot like other multi-subject fields.
     subject_cols: list[int] = []
-    for c in range(issuer_data_col, ws.max_column + 1, 2):
-        header_values = [ws.cell(r, c).value for r in range(1, 12)]
-        header_text = " ".join(str(v) for v in header_values if isinstance(v, str)).lower()
-        if any(k in header_text for k in ("issuer", "director", "guarantor", "key person")):
-            subject_cols.append(c)
-
-    if not subject_cols:
-        # Fallback to the original behavior if the template headers are unusual.
-        subject_cols = [issuer_data_col + i * 2 for i in range(min(3, len(all_subject_names)))]
+    for i, _ in enumerate(all_subject_names):
+        col = issuer_data_col + i * 2
+        if col <= ws.max_column:
+            subject_cols.append(col)
+        else:
+            print(
+                f"⚠️ Skipping subject name at index {i + 1}: template has no column {col} "
+                f"(max column: {ws.max_column})"
+            )
+            break
 
     inserted_subject_cols: list[int] = []
     for i, subject_name in enumerate(all_subject_names[:len(subject_cols)]):
@@ -421,15 +421,11 @@ def fill_knockout_matrix(
             ws.cell(7, col).value = subject_name
             inserted_subject_cols.append(col)
 
-    # Keep overflow names visible instead of silently dropping them.
-    if len(all_subject_names) > len(subject_cols) and subject_cols:
-        overflow = [n for n in all_subject_names[len(subject_cols):] if n]
-        if overflow:
-            last_col = subject_cols[-1]
-            existing = ws.cell(7, last_col).value
-            existing_text = f"{existing}" if existing else ""
-            overflow_text = " ; ".join(overflow)
-            ws.cell(7, last_col).value = f"{existing_text} ; {overflow_text}" if existing_text else overflow_text
+    if len(all_subject_names) > len(subject_cols):
+        print(
+            f"⚠️ Inserted {len(subject_cols)} subject name(s) out of {len(all_subject_names)}; "
+            "remaining names were not written because template columns ran out."
+        )
     
     label_index = build_label_row_index(ws, LABEL_COL)
     
