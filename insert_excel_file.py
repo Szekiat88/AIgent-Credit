@@ -212,6 +212,24 @@ def _within_limit(outstanding, limit) -> str:
     return "YES" if outstanding is not None and limit is not None and outstanding <= limit else "NO"
 
 
+def _unique_non_empty_names(names: list[Any]) -> list[str]:
+    """Return non-empty names without duplicates while preserving original order."""
+    seen: set[str] = set()
+    unique_names: list[str] = []
+
+    for name in names:
+        cleaned = re.sub(r"\s+", " ", str(name or "")).strip()
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_names.append(cleaned)
+
+    return unique_names
+
+
 def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     """Build knockout matrix data from merged report."""
     summary = merged.get("summary_report", {})
@@ -421,15 +439,14 @@ def fill_knockout_matrix(
             ws.cell(7, col).value = subject_name
             inserted_subject_cols.append(col)
 
-    # Keep overflow names visible instead of silently dropping them.
+    # Avoid concatenating multiple names into one cell; keep one name per column.
     if len(all_subject_names) > len(subject_cols) and subject_cols:
         overflow = [n for n in all_subject_names[len(subject_cols):] if n]
         if overflow:
-            last_col = subject_cols[-1]
-            existing = ws.cell(7, last_col).value
-            existing_text = f"{existing}" if existing else ""
-            overflow_text = " ; ".join(overflow)
-            ws.cell(7, last_col).value = f"{existing_text} ; {overflow_text}" if existing_text else overflow_text
+            print(
+                "⚠️ More subject names were extracted than available subject columns. "
+                f"Skipped overflow names: {', '.join(overflow)}"
+            )
     
     label_index = build_label_row_index(ws, LABEL_COL)
     
@@ -598,15 +615,13 @@ def main() -> None:
         # Keep all detected subject names (issuer + directors/guarantors) so they can
         # be written to the subject header columns in the knockout template.
         raw_subject_names = summary.get("all_names_of_subject") or []
-        all_subject_names = [
-            re.sub(r"\s+", " ", str(name)).strip()
-            for name in raw_subject_names
-            if name and str(name).strip()
-        ]
+        all_subject_names = _unique_non_empty_names(raw_subject_names)
 
         # Ensure issuer is always the first displayed subject.
         if issuer_name and issuer_name not in all_subject_names:
             all_subject_names.insert(0, issuer_name)
+
+        all_subject_names = _unique_non_empty_names(all_subject_names)
         
         # Build data
         data = build_knockout_data(merged)
