@@ -277,8 +277,12 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     # Do not add subject-based data here to avoid conflicts with section data insertion
     add_multi_subject_data("Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)", "Total_Enquiries_Last_12_months", _format_number)
     add_multi_subject_data("Special Attention Account (per primary CRA report)", "Special_Attention_Account", _format_number)
-    add_multi_subject_data("Summary of Total Liabilities (Outstanding) (per primary CRA report)", "Borrower_Outstanding_RM", _format_number)
-    add_multi_subject_data("Summary of Total Liabilities (Total Limit) (per primary CRA report)", "Borrower_Total_Limit_RM", _format_number)
+
+    # Prefer calculated detailed totals for liabilities summary rows.
+    for i in range(1, num_subjects + 1):
+        suffix = f" {i}" if i > 1 else ""
+        data[f"Summary of Total Liabilities (Outstanding) (per primary CRA report){suffix}"] = _format_number(total_outstanding)
+        data[f"Summary of Total Liabilities (Total Limit) (per primary CRA report){suffix}"] = _format_number(total_limit)
     
     # Company-level data
     sections = detailed.get("sections", [])
