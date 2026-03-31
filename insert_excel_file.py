@@ -420,7 +420,7 @@ def fill_knockout_matrix(
     ws = wb[SHEET_NAME]
     
     # Set issuer name
-    for r in range(1, 30):
+    for r in range(1, 35):
         if isinstance(ws.cell(r, 4).value, str) and "issuer name" in _norm(ws.cell(r, 4).value):
             set_issuer_name(ws, 5, issuer_name)
             break
