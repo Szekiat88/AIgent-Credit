@@ -126,18 +126,28 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     next_six_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     totals_by_record_no_float: Dict[str, float] = {}
+    overdraft_comparisons: Dict[str, Dict[str, Optional[float]]] = {}
 
     for record in records:
+        first_line_values = (
+            _extract_numbers_after_date(record.raw_lines[0]) if record.raw_lines else []
+        )
         if record.raw_lines:
             first_line_numbers_after_date_by_record_no[str(record.no)] = [
                 float(value)
-                for value in _extract_numbers_after_date(record.raw_lines[0])
+                for value in first_line_values
                 if value is not None
             ]
+        record_overdraft_outstanding = Decimal("0")
+        has_overdraft_keyword = False
+
         for line in record.raw_lines:
-            # matched_keyword = next((kw for kw in ACCOUNT_KEYWORDS if kw in line), None)
-            # if not matched_keyword:
-            #     continue
+            matched_keyword = next((kw for kw in ACCOUNT_KEYWORDS if kw in line), None)
+            if matched_keyword == "OVRDRAFT":
+                has_overdraft_keyword = True
+                overdraft_amount = _extract_amount_before_date(line)
+                if overdraft_amount is not None:
+                    record_overdraft_outstanding += overdraft_amount
             
             amount_before_date = _extract_amount_before_date(line)
             if amount_before_date is not None:
@@ -156,6 +166,13 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                     next_first_digit_totals[key] += next_first_counts.get(key, 0)
                     next_six_digit_totals[key] += next_six_counts.get(key, 0)
 
+        if has_overdraft_keyword:
+            overdraft_limit = float(first_line_values[0]) if first_line_values else None
+            overdraft_comparisons[str(record.no)] = {
+                "outstanding": float(record_overdraft_outstanding),
+                "limit": overdraft_limit,
+            }
+
     first_line_numbers_after_date_filtered = {
         key: first_line_numbers_after_date_by_record_no.get(key, [])
         for key in totals_by_record_no_float
@@ -170,6 +187,7 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             "next_first_numbers_digit_counts_0_1_2_3_5_plus": next_first_digit_totals,
             "next_six_numbers_digit_counts_0_1_2_3_5_plus": next_six_digit_totals,
         },
+        "overdraft_comparisons": overdraft_comparisons,
     }
 
 
@@ -272,5 +290,4 @@ def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
     }
 
     return output
-
 

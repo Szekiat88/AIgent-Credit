@@ -120,28 +120,56 @@ def _format_cell_value(value: Any) -> Any:
     return value
 
 
-def _first_value(items: list[float] | None) -> Optional[float]:
-    """Safely get first value from list."""
-    if not items:
-        return None
-    return items[0]
-
-
 def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
     """Compute overdraft compliance status."""
-    totals_by_record = analysis.get("amount_totals", {}).get("by_record_no", {})
-    first_values = analysis.get("first_line_numbers_after_date_by_record_no", {})
-    
-    if not totals_by_record and not first_values:
+    overdraft_comparisons = analysis.get("overdraft_comparisons", {})
+
+    if not overdraft_comparisons:
         return "N/A"
 
-    failures = []
-    for record_no, total in totals_by_record.items():
-        first_val = _first_value(first_values.get(record_no))
-        if first_val is not None and float(total) > float(first_val):
-            failures.append(record_no)
-    
-    return "Yes" if not failures else "No"
+    total_outstanding = 0.0
+    total_limit = 0.0
+    all_within_limit = True
+
+    for comparison in overdraft_comparisons.values():
+        outstanding = comparison.get("outstanding")
+        limit = comparison.get("limit")
+
+        if outstanding is None or limit is None:
+            all_within_limit = False
+            continue
+
+        total_outstanding += float(outstanding)
+        total_limit += float(limit)
+        if float(outstanding) > float(limit):
+            all_within_limit = False
+
+    status = "YES" if all_within_limit else "NO"
+    return f"{status}, outstanding: {total_outstanding}, limit: {total_limit}"
+
+
+def _merge_overdraft_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Merge overdraft comparisons across all detailed report sections."""
+    merged: Dict[str, Dict[str, Optional[float]]] = {}
+
+    for section in sections:
+        analysis = section.get("account_line_analysis", {})
+        comparisons = analysis.get("overdraft_comparisons", {})
+        if not isinstance(comparisons, dict):
+            continue
+
+        section_number = section.get("section_number")
+        for record_no, values in comparisons.items():
+            if not isinstance(values, dict):
+                continue
+
+            key = f"{section_number}:{record_no}" if section_number is not None else str(record_no)
+            merged[key] = {
+                "outstanding": values.get("outstanding"),
+                "limit": values.get("limit"),
+            }
+
+    return {"overdraft_comparisons": merged}
 
 
 def score_to_equivalent(score: Optional[int]) -> Optional[str]:
@@ -289,7 +317,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     if not sections:
         sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
     
-    overdraft_compliance = _compute_overdraft_compliance(sections[0].get("account_line_analysis", {})) if sections else "N/A"
+    overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
     banking_status = f"{_within_limit(total_outstanding, total_limit)}, outstanding: {total_outstanding}, limit: {total_limit}"
     non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
     
@@ -382,6 +410,7 @@ def fill_knockout_matrix(
     cra_report_date: Optional[str] = None,
     all_subject_names: Optional[list[str]] = None,
     ccris_conduct_counts_by_section: Optional[list[Dict[str, Any]]] = None,
+    overdraft_by_section: Optional[list[str]] = None,
     trade_amounts_by_section: Optional[list[list[float]]] = None,
 ) -> str:
     """Fill the knockout matrix Excel template with data."""
@@ -468,6 +497,14 @@ def fill_knockout_matrix(
             _format_cell_value
         )
 
+    # Insert Overdraft compliance by section in sequence.
+    if overdraft_by_section:
+        written += _insert_section_data(
+            ws, "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)",
+            label_index, issuer_data_col, overdraft_by_section,
+            _format_cell_value
+        )
+
     # Apply Column L coloring immediately after insertion, only for columns inserted this run.
     cols_to_color = inserted_subject_cols or subject_cols
     highlighted = apply_column_l_highlighting(ws, cols_to_color)
@@ -503,6 +540,21 @@ def _extract_sections_data(merged: Dict[str, Any]):
         for section in sections
         if section.get("account_line_analysis", {}).get("digit_counts_totals")
     ]
+
+
+def _extract_overdraft_by_section(merged: Dict[str, Any]) -> List[str]:
+    """Extract overdraft compliance text by section, preserving section order."""
+    detailed = merged.get("detailed_credit_report", {})
+    sections = detailed.get("sections", [])
+    if not sections:
+        return []
+
+    values: List[str] = []
+    for section in sections:
+        analysis = section.get("account_line_analysis", {})
+        compliance = _compute_overdraft_compliance(analysis)
+        values.append(compliance if compliance else "N/A")
+    return values
 
 
 def _find_excel_template(excel_name: str = DEFAULT_EXCEL) -> Optional[str]:
@@ -611,6 +663,7 @@ def main() -> None:
         # Build data
         data = build_knockout_data(merged)
         ccris_sections = _extract_sections_data(merged)
+        overdraft_by_section = _extract_overdraft_by_section(merged)
         
         # Extract trade amounts (extract PDF text once to avoid memory issues)
         # Get PDF path if not already set
@@ -641,6 +694,7 @@ def main() -> None:
             cra_report_date=summary.get("Last_Updated_By_Experian"),
             all_subject_names=all_subject_names or None,
             ccris_conduct_counts_by_section=ccris_sections or None,
+            overdraft_by_section=overdraft_by_section or None,
         )
         print(f"\n✅ Success! File saved: {os.path.basename(output)}")
         print(f"📁 Location: {os.path.dirname(os.path.abspath(output))}")
