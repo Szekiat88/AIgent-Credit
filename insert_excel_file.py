@@ -148,6 +148,30 @@ def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
     return f"{status}, outstanding: {total_outstanding}, limit: {total_limit}"
 
 
+def _merge_overdraft_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Merge overdraft comparisons across all detailed report sections."""
+    merged: Dict[str, Dict[str, Optional[float]]] = {}
+
+    for section in sections:
+        analysis = section.get("account_line_analysis", {})
+        comparisons = analysis.get("overdraft_comparisons", {})
+        if not isinstance(comparisons, dict):
+            continue
+
+        section_number = section.get("section_number")
+        for record_no, values in comparisons.items():
+            if not isinstance(values, dict):
+                continue
+
+            key = f"{section_number}:{record_no}" if section_number is not None else str(record_no)
+            merged[key] = {
+                "outstanding": values.get("outstanding"),
+                "limit": values.get("limit"),
+            }
+
+    return {"overdraft_comparisons": merged}
+
+
 def score_to_equivalent(score: Optional[int]) -> Optional[str]:
     """Convert credit score to equivalent grade."""
     if score is None:
@@ -293,7 +317,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     if not sections:
         sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
     
-    overdraft_compliance = _compute_overdraft_compliance(sections[0].get("account_line_analysis", {})) if sections else "N/A"
+    overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
     banking_status = f"{_within_limit(total_outstanding, total_limit)}, outstanding: {total_outstanding}, limit: {total_limit}"
     non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
     
