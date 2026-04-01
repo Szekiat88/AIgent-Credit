@@ -8,14 +8,14 @@ from pathlib import Path
 from typing import Optional
 
 import openpyxl
-from openpyxl.styles import PatternFill
+from openpyxl.styles import Font
 from openpyxl.worksheet.worksheet import Worksheet
 
 SHEET_NAME = "Knock-Out"
 CRITERIA_COL = 12  # Column L
 LABEL_COL = 4      # Column D
 HEADER_SCAN_ROWS = 12
-YELLOW_FILL = PatternFill(fill_type="solid", start_color="FFFF00", end_color="FFFF00")
+RED_BOLD_FONT = Font(bold=True, color="00FF0000")
 
 
 def _norm(value: object) -> str:
@@ -134,7 +134,7 @@ def detect_subject_columns(ws: Worksheet, start_col: int = 13) -> list[int]:
 
 
 def apply_column_l_highlighting(ws: Worksheet, subject_cols: Optional[list[int]] = None) -> int:
-    """Apply yellow fill when subject values meet Column L criteria.
+    """Apply red bold font when subject values meet Column L criteria.
 
     Args:
         ws: Knock-Out worksheet.
@@ -142,7 +142,7 @@ def apply_column_l_highlighting(ws: Worksheet, subject_cols: Optional[list[int]]
                      If omitted, columns are auto-detected.
 
     Returns:
-        Number of highlighted cells.
+        Number of formatted cells.
     """
     columns = subject_cols or detect_subject_columns(ws)
     highlighted = 0
@@ -155,7 +155,7 @@ def apply_column_l_highlighting(ws: Worksheet, subject_cols: Optional[list[int]]
         for col in columns:
             cell = ws.cell(row, col)
             if _matches_criteria(str(criteria), cell.value, str(label or "")):
-                cell.fill = YELLOW_FILL
+                cell.font = RED_BOLD_FONT
                 highlighted += 1
 
     return highlighted
