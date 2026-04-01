@@ -271,6 +271,7 @@ def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
       
         records = split_into_records(section_lines)
         analysis = analyze_account_lines(records)
+        print("Hello: ", analysis)
              
         sections_data.append({
             "section_number": section_idx,

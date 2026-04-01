@@ -96,14 +96,15 @@ def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
         return f"MIA1: {_safe_int(counts_dict.get('1', 0))}, MIA2: {_safe_int(counts_dict.get('2', 0))}, MIA3: {_safe_int(counts_dict.get('3', 0))}, MIA4+: {_safe_int(counts_dict.get(plus_key, 0))}"
 
     parts = []
-    if isinstance(counts["next_first"], dict):
-        parts.append(f"current 1 month {format_counts(counts['next_first'], '5_plus')}")
-    if isinstance(counts["last_1"], dict):
-        parts.append(f"current 1 month {format_counts(counts['last_1'], '4+')}")
     if isinstance(counts["next_six"], dict):
         parts.append(f"past 6 months {format_counts(counts['next_six'], '5_plus')}")
     if isinstance(counts["last_6"], dict):
         parts.append(f"past 6 months {format_counts(counts['last_6'], '4+')}")
+    if isinstance(counts["next_first"], dict):
+        parts.append(f"current 1 month {format_counts(counts['next_first'], '5_plus')}")
+    if isinstance(counts["last_1"], dict):
+        parts.append(f"current 1 month {format_counts(counts['last_1'], '4+')}")
+   
 
     return " and /or ".join(parts) if parts else None
 
@@ -198,10 +199,11 @@ def _format_non_bank_mia(stats: Dict[str, Any]) -> Optional[str]:
         return f"MIA1: {_safe_int(counts_dict.get('1', 0))}, MIA2: {_safe_int(counts_dict.get('2', 0))}, MIA3: {_safe_int(counts_dict.get('3', 0))}, MIA4+: {_safe_int(counts_dict.get(plus_key, 0))}"
     
     parts = []
-    if isinstance(last_1, dict):
-        parts.append(f"current 1 month {format_counts(last_1, '4+')}")
     if isinstance(last_6, dict):
         parts.append(f"past 6 months {format_counts(last_6, '4+')}")
+    if isinstance(last_1, dict):
+        parts.append(f"current 1 month {format_counts(last_1, '4+')}")
+
     
     return " and /or ".join(parts) if parts else None
 

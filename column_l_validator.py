@@ -86,6 +86,8 @@ def _matches_criteria(criteria: str, value: object, label: str) -> bool:
         return v.startswith("no") or v in {"0", "false"}
 
     if "other than \"existing\"" in c:
+        if "company status (existing only)" in _norm(label) and v in {"n/a", "na", ""}:
+            return False
         return v != "existing"
 
     if c == "yes":
@@ -110,6 +112,8 @@ def _matches_criteria(criteria: str, value: object, label: str) -> bool:
         return threshold is not None and n is not None and n < threshold
 
     if "subject as \"defendant\"" in c and "ongoing" in c:
+        if "legal case - status" in _norm(label) and v.startswith("yes"):
+            return True
         return "defendant" in v and "ongoing" in v
 
     if "any positive notation" in c or c == "positive":
