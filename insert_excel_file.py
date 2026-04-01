@@ -228,7 +228,9 @@ def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
             # Check if this record has ANY MIA (1, 2, 3, or 4+) in the last 6 months
             if any(val is not None and val >= 1 for val in last_6_values):
                 count += 1
-        conduct_count = count if count > 0 else None
+        conduct_count = count
+    elif conduct_count is None:
+        conduct_count = "N/A"
     
     # Legal status
     markers = sorted({record.get("legal_marker") for record in records if record.get("legal_marker")})
