@@ -32,6 +32,20 @@ ACCOUNT_KEYWORDS = (
     "CRDTCARD",
 )
 
+LEGAL_STATUS_CODE_MAP = {
+    "10": "Summon/Writ files",
+    "11": "Judgement order/Order of sale",
+    "12": "Bankruptcy",
+    "13": "Charging order",
+    "14": "Garnishee order",
+    "15": "Writ of seizure and sale",
+    "16": "Prohibitor order",
+    "17": "Winding-up",
+    "18": "Auction",
+    "19": "Judgement debtor summon",
+    "20": "Receiver/Section 176",
+}
+
 
 # =============================
 # DATA STRUCTURE
@@ -121,12 +135,19 @@ def _extract_term_details(line: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def _extract_legal_status_codes(line: str) -> List[str]:
+    sanitized = RE_DATE.sub(" ", line)
+    sanitized = RE_MONEY.sub(" ", sanitized)
+    return re.findall(r"(?<!\d)(1[0-9]|20)(?!\d)", sanitized)
+
+
 def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]:
     first_line_numbers_after_date_by_record_no: Dict[str, List[float]] = {}
     next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     next_six_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     totals_by_record_no_float: Dict[str, float] = {}
     overdraft_comparisons: Dict[str, Dict[str, Optional[float]]] = {}
+    legal_status_codes: List[str] = []
 
     for record in records:
         first_line_values = (
@@ -142,6 +163,10 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
         has_overdraft_keyword = False
 
         for line in record.raw_lines:
+            for code in _extract_legal_status_codes(line):
+                if code not in legal_status_codes:
+                    legal_status_codes.append(code)
+
             matched_keyword = next((kw for kw in ACCOUNT_KEYWORDS if kw in line), None)
             if matched_keyword == "OVRDRAFT":
                 has_overdraft_keyword = True
@@ -188,6 +213,11 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             "next_six_numbers_digit_counts_0_1_2_3_5_plus": next_six_digit_totals,
         },
         "overdraft_comparisons": overdraft_comparisons,
+        "legal_status_codes": legal_status_codes,
+        "legal_status_details": [
+            f"{code} = {LEGAL_STATUS_CODE_MAP.get(code, 'Unknown')}"
+            for code in legal_status_codes
+        ],
     }
 
 
@@ -291,4 +321,3 @@ def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
     }
 
     return output
-
