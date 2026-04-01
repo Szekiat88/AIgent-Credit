@@ -222,25 +222,54 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
 
 
 def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
-    pattern_outstanding = re.compile(
-        r"OUTSTANDING\s*([0-9,]+(?:\.\d{2})?)",
-        re.IGNORECASE,
-    )
-    pattern_limit = re.compile(
-        r"LIMIT\s*:\s*([0-9,]+(?:\.\d{2})?)",
-        re.IGNORECASE,
-    )
-    chunks: List[str] = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            chunks.append(page.extract_text() or "")
-    text = "\n".join(chunks)
+    # Read totals from the DETAILED CREDIT REPORT (BANKING ACCOUNTS) section to avoid
+    # capturing similarly named fields from other report sections.
+    all_section_lines = extract_all_sections(pdf_path, START_MARKER, END_MARKER)
+    detailed_text = "\n".join("\n".join(lines) for lines in all_section_lines)
 
-    outstanding_match = pattern_outstanding.search(text)
-    limit_match = pattern_limit.search(text)
+    if not detailed_text.strip():
+        chunks: List[str] = []
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                chunks.append(page.extract_text() or "")
+        detailed_text = "\n".join(chunks)
 
-    outstanding_value = parse_decimal(outstanding_match.group(1)) if outstanding_match else None
-    limit_value = parse_decimal(limit_match.group(1)) if limit_match else None
+    outstanding_patterns = [
+        re.compile(
+            r"TOTAL\s+OUTSTANDING(?:\s+BALANCE)?\s*:\s*([0-9,]+(?:\.\d{2})?)",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"TOTAL\s+OUTSTANDING\s+([0-9,]+(?:\.\d{2})?)\s+BALANCE\s*:",
+            re.IGNORECASE,
+        ),
+    ]
+    limit_patterns = [
+        re.compile(
+            r"TOTAL\s+LIMIT\s*:\s*([0-9,]+(?:\.\d{2})?)",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"TOTAL\s+LIMIT\s+([0-9,]+(?:\.\d{2})?)",
+            re.IGNORECASE,
+        ),
+    ]
+
+    outstanding_value = None
+    for pattern in outstanding_patterns:
+        match = pattern.search(detailed_text)
+        if match:
+            outstanding_value = parse_decimal(match.group(1))
+            if outstanding_value is not None:
+                break
+
+    limit_value = None
+    for pattern in limit_patterns:
+        match = pattern.search(detailed_text)
+        if match:
+            limit_value = parse_decimal(match.group(1))
+            if limit_value is not None:
+                break
 
     return {
         "total_outstanding_balance": float(outstanding_value) if outstanding_value is not None else None,
