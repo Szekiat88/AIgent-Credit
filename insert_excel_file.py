@@ -410,6 +410,7 @@ def fill_knockout_matrix(
     cra_report_date: Optional[str] = None,
     all_subject_names: Optional[list[str]] = None,
     ccris_conduct_counts_by_section: Optional[list[Dict[str, Any]]] = None,
+    overdraft_by_section: Optional[list[str]] = None,
     trade_amounts_by_section: Optional[list[list[float]]] = None,
 ) -> str:
     """Fill the knockout matrix Excel template with data."""
@@ -496,6 +497,14 @@ def fill_knockout_matrix(
             _format_cell_value
         )
 
+    # Insert Overdraft compliance by section in sequence.
+    if overdraft_by_section:
+        written += _insert_section_data(
+            ws, "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)",
+            label_index, issuer_data_col, overdraft_by_section,
+            _format_cell_value
+        )
+
     # Apply Column L coloring immediately after insertion, only for columns inserted this run.
     cols_to_color = inserted_subject_cols or subject_cols
     highlighted = apply_column_l_highlighting(ws, cols_to_color)
@@ -531,6 +540,21 @@ def _extract_sections_data(merged: Dict[str, Any]):
         for section in sections
         if section.get("account_line_analysis", {}).get("digit_counts_totals")
     ]
+
+
+def _extract_overdraft_by_section(merged: Dict[str, Any]) -> List[str]:
+    """Extract overdraft compliance text by section, preserving section order."""
+    detailed = merged.get("detailed_credit_report", {})
+    sections = detailed.get("sections", [])
+    if not sections:
+        return []
+
+    values: List[str] = []
+    for section in sections:
+        analysis = section.get("account_line_analysis", {})
+        compliance = _compute_overdraft_compliance(analysis)
+        values.append(compliance if compliance else "N/A")
+    return values
 
 
 def _find_excel_template(excel_name: str = DEFAULT_EXCEL) -> Optional[str]:
@@ -639,6 +663,7 @@ def main() -> None:
         # Build data
         data = build_knockout_data(merged)
         ccris_sections = _extract_sections_data(merged)
+        overdraft_by_section = _extract_overdraft_by_section(merged)
         
         # Extract trade amounts (extract PDF text once to avoid memory issues)
         # Get PDF path if not already set
@@ -669,6 +694,7 @@ def main() -> None:
             cra_report_date=summary.get("Last_Updated_By_Experian"),
             all_subject_names=all_subject_names or None,
             ccris_conduct_counts_by_section=ccris_sections or None,
+            overdraft_by_section=overdraft_by_section or None,
         )
         print(f"\n✅ Success! File saved: {os.path.basename(output)}")
         print(f"📁 Location: {os.path.dirname(os.path.abspath(output))}")
