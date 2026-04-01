@@ -17,7 +17,7 @@ from merged_credit_report import merge_reports, resolve_pdf_path
 from pdf_utils import pick_excel_file
 import pdfplumber
 
-from column_l_validator import apply_column_l_highlighting
+from column_l_validator import apply_column_l_highlighting, RED_BOLD_FONT
 
 SHEET_NAME = "Knock-Out"
 LABEL_COL = 4  # Column D
@@ -244,6 +244,32 @@ def _within_limit(outstanding, limit) -> str:
     return "YES" if outstanding is not None and limit is not None and outstanding <= limit else "NO"
 
 
+def _extract_ccris_legal_status(sections: List[Dict[str, Any]]) -> str:
+    """Extract and format CCRIS legal status codes from detailed banking sections."""
+    legal_status_details: List[str] = []
+    seen: set[str] = set()
+
+    for section in sections:
+        details = section.get("account_line_analysis", {}).get("legal_status_details", [])
+        if not isinstance(details, list):
+            continue
+        for detail in details:
+            detail_text = str(detail).strip()
+            if detail_text and detail_text not in seen:
+                seen.add(detail_text)
+                legal_status_details.append(detail_text)
+
+    return ", ".join(legal_status_details) if legal_status_details else "N/A"
+
+
+def _should_highlight_ccris_legal_status(label: str, value: Any) -> bool:
+    if not _norm(label).startswith(_norm("CCRIS Loan Account - Legal Status (per primary CRA report)")):
+        return False
+    if value is None:
+        return False
+    return str(value).strip().upper() != "N/A"
+
+
 def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     """Build knockout matrix data from merged report."""
     summary = merged.get("summary_report", {})
@@ -324,13 +350,14 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
     banking_status = f"{_within_limit(total_outstanding, total_limit)}, outstanding: {total_outstanding}, limit: {total_limit}"
     non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
+    ccris_legal_status = _extract_ccris_legal_status(sections)
     
     for i in range(1, num_subjects + 1):
         suffix = f" {i}" if i > 1 else ""
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
         data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
         data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_within
-        data[f"CCRIS Loan Account - Legal Status (per primary CRA report){suffix}"] = sections[0].get("account_line_analysis", {}).get("Bank_LOD") if sections else None
+        data[f"CCRIS Loan Account - Legal Status (per primary CRA report){suffix}"] = ccris_legal_status
         data[f"Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report){suffix}"] = non_bank_conduct
         data[f"Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report){suffix}"] = non_bank_legal
     
@@ -490,7 +517,10 @@ def fill_knockout_matrix(
             missing.append(label)
             continue
 
-        ws.cell(row, target_col).value = _format_cell_value(value)
+        formatted_value = _format_cell_value(value)
+        ws.cell(row, target_col).value = formatted_value
+        if _should_highlight_ccris_legal_status(label, formatted_value):
+            ws.cell(row, target_col).font = RED_BOLD_FONT
         written += 1
 
     # Insert CCRIS Conduct Count
