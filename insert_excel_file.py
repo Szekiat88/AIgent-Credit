@@ -68,6 +68,13 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _format_with_commas(value: int | float) -> str:
+    """Format numeric value with comma separators for thousands."""
+    if float(value).is_integer():
+        return f"{int(value):,}"
+    return f"{value:,.2f}".rstrip("0").rstrip(".")
+
+
 def _format_number(value: Optional[float | int]) -> Optional[str]:
     """Format number for display."""
     if value is None:
@@ -75,7 +82,11 @@ def _format_number(value: Optional[float | int]) -> Optional[str]:
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if isinstance(value, (int, float)):
-        return f"{int(value)}" if float(value).is_integer() else f"{value}"
+        return _format_with_commas(value)
+    if isinstance(value, str):
+        cleaned = value.strip().replace(",", "")
+        if re.fullmatch(r"-?\d+(\.\d+)?", cleaned):
+            return _format_with_commas(float(cleaned))
     return str(value)
 
 
@@ -93,7 +104,12 @@ def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
 
     def format_counts(counts_dict: Dict[str, Any], plus_key: str) -> str:
         """Format counts as 'MIA1: X, MIA2: Y, ...'"""
-        return f"MIA1: {_safe_int(counts_dict.get('1', 0))}, MIA2: {_safe_int(counts_dict.get('2', 0))}, MIA3: {_safe_int(counts_dict.get('3', 0))}, MIA4+: {_safe_int(counts_dict.get(plus_key, 0))}"
+        return (
+            f"MIA1: {_format_with_commas(_safe_int(counts_dict.get('1', 0)))}, "
+            f"MIA2: {_format_with_commas(_safe_int(counts_dict.get('2', 0)))}, "
+            f"MIA3: {_format_with_commas(_safe_int(counts_dict.get('3', 0)))}, "
+            f"MIA4+: {_format_with_commas(_safe_int(counts_dict.get(plus_key, 0)))}"
+        )
 
     parts = []
     if isinstance(counts["next_six"], dict):
@@ -118,6 +134,8 @@ def _format_cell_value(value: Any) -> Any:
         return mia_counts if mia_counts else json.dumps(value, ensure_ascii=False)
     if isinstance(value, list):
         return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (int, float, str)):
+        return _format_number(value)
     return value
 
 
@@ -146,7 +164,10 @@ def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
             all_within_limit = False
 
     status = "YES" if all_within_limit else "NO"
-    return f"{status}, outstanding: {total_outstanding}, limit: {total_limit}"
+    return (
+        f"{status}, outstanding: {_format_with_commas(total_outstanding)}, "
+        f"limit: {_format_with_commas(total_limit)}"
+    )
 
 
 def _merge_overdraft_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -206,7 +227,12 @@ def _format_non_bank_mia(stats: Dict[str, Any]) -> Optional[str]:
     
     def format_counts(counts_dict: Dict[str, Any], plus_key: str) -> str:
         """Format counts as 'MIA1: X, MIA2: Y, ...'"""
-        return f"MIA1: {_safe_int(counts_dict.get('1', 0))}, MIA2: {_safe_int(counts_dict.get('2', 0))}, MIA3: {_safe_int(counts_dict.get('3', 0))}, MIA4+: {_safe_int(counts_dict.get(plus_key, 0))}"
+        return (
+            f"MIA1: {_format_with_commas(_safe_int(counts_dict.get('1', 0)))}, "
+            f"MIA2: {_format_with_commas(_safe_int(counts_dict.get('2', 0)))}, "
+            f"MIA3: {_format_with_commas(_safe_int(counts_dict.get('3', 0)))}, "
+            f"MIA4+: {_format_with_commas(_safe_int(counts_dict.get(plus_key, 0)))}"
+        )
     
     parts = []
     if isinstance(last_6, dict):
@@ -358,7 +384,11 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
     
     overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
-    banking_status = f"{_within_limit(total_outstanding, total_limit)}, outstanding: {total_outstanding}, limit: {total_limit}"
+    banking_status = (
+        f"{_within_limit(total_outstanding, total_limit)}, "
+        f"outstanding: {_format_with_commas(total_outstanding)}, "
+        f"limit: {_format_with_commas(total_limit)}"
+    )
     non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
     ccris_legal_status = _extract_ccris_legal_status(sections)
     
