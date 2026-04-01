@@ -193,6 +193,16 @@ def _format_non_bank_mia(stats: Dict[str, Any]) -> Optional[str]:
     
     if not isinstance(last_1, dict) and not isinstance(last_6, dict):
         return None
+
+    def has_any_mia(counts_dict: Dict[str, Any], plus_key: str) -> bool:
+        """Return True when any MIA bucket has a non-zero value."""
+        return any(_safe_int(counts_dict.get(k, 0)) > 0 for k in ("1", "2", "3", plus_key))
+
+    if (
+        (not isinstance(last_6, dict) or not has_any_mia(last_6, "4+"))
+        and (not isinstance(last_1, dict) or not has_any_mia(last_1, "4+"))
+    ):
+        return None
     
     def format_counts(counts_dict: Dict[str, Any], plus_key: str) -> str:
         """Format counts as 'MIA1: X, MIA2: Y, ...'"""
@@ -228,7 +238,7 @@ def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
             # Check if this record has ANY MIA (1, 2, 3, or 4+) in the last 6 months
             if any(val is not None and val >= 1 for val in last_6_values):
                 count += 1
-        conduct_count = count
+        conduct_count = count if count > 0 else "N/A"
     elif conduct_count is None:
         conduct_count = "N/A"
     
