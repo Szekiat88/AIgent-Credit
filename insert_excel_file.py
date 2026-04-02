@@ -194,6 +194,54 @@ def _merge_overdraft_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, An
     return {"overdraft_comparisons": merged}
 
 
+def _compute_banking_facility_status(analysis: Dict[str, Any]) -> str:
+    """Compute per-record banking outstanding-vs-limit status from extracted comparisons."""
+    comparisons = analysis.get("outstanding_limit_comparisons", {})
+    if not comparisons:
+        return "N/A"
+
+    entries: List[str] = []
+    for record_key in sorted(comparisons.keys(), key=str):
+        values = comparisons.get(record_key)
+        if not isinstance(values, dict):
+            continue
+        outstanding = values.get("outstanding")
+        limit = values.get("limit")
+        if outstanding is None or limit is None:
+            continue
+        status = "YES" if float(outstanding) <= float(limit) else "NO"
+        entries.append(
+            f"{status}, outstanding: {_format_with_commas(float(outstanding))}, "
+            f"limit: {_format_with_commas(float(limit))}"
+        )
+
+    return " | ".join(entries) if entries else "N/A"
+
+
+def _merge_outstanding_limit_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Merge line-level outstanding/limit comparisons across detailed report sections."""
+    merged: Dict[str, Dict[str, Optional[float]]] = {}
+
+    for section in sections:
+        analysis = section.get("account_line_analysis", {})
+        comparisons = analysis.get("outstanding_limit_comparisons", {})
+        if not isinstance(comparisons, dict):
+            continue
+
+        section_number = section.get("section_number")
+        for record_no, values in comparisons.items():
+            if not isinstance(values, dict):
+                continue
+
+            key = f"{section_number}:{record_no}" if section_number is not None else str(record_no)
+            merged[key] = {
+                "outstanding": values.get("outstanding"),
+                "limit": values.get("limit"),
+            }
+
+    return {"outstanding_limit_comparisons": merged}
+
+
 def score_to_equivalent(score: Optional[int]) -> Optional[str]:
     """Convert credit score to equivalent grade."""
     if score is None:
@@ -384,16 +432,31 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
     
     overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
-    banking_status = (
+    fallback_banking_status = (
         f"{_within_limit(total_outstanding, total_limit)}, "
         f"outstanding: {_format_with_commas(total_outstanding)}, "
         f"limit: {_format_with_commas(total_limit)}"
     )
+    banking_status_by_section: List[str] = []
+    for section in sections:
+        analysis = section.get("account_line_analysis", {})
+        section_status = _compute_banking_facility_status(analysis)
+        banking_status_by_section.append(
+            section_status if section_status != "N/A" else fallback_banking_status
+        )
+
+    if not banking_status_by_section:
+        banking_status_by_section = [fallback_banking_status]
     non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
     ccris_legal_status = _extract_ccris_legal_status(sections)
     
     for i in range(1, num_subjects + 1):
         suffix = f" {i}" if i > 1 else ""
+        banking_status = (
+            banking_status_by_section[i - 1]
+            if i - 1 < len(banking_status_by_section)
+            else fallback_banking_status
+        )
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
         data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
         data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_within
