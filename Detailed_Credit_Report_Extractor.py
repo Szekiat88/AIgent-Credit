@@ -247,14 +247,18 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
         rf"\s+LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
         re.IGNORECASE,
     )
-    outstanding_pattern = re.compile(
-        rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
-        re.IGNORECASE,
-    )
-    limit_pattern = re.compile(
-        rf"LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
-        re.IGNORECASE,
-    )
+    outstanding_patterns = [
+        re.compile(
+            rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+            re.IGNORECASE,
+        )
+    ]
+    limit_patterns = [
+        re.compile(
+            rf"LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+            re.IGNORECASE,
+        )
+    ]
 
     outstanding_value = None
     limit_value = None
@@ -264,15 +268,26 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
         outstanding_value = parse_decimal(paired_match.group(1).replace(" ", ""))
         limit_value = parse_decimal(paired_match.group(2).replace(" ", ""))
 
+    def iter_patterns(patterns):
+        if isinstance(patterns, re.Pattern):
+            return (patterns,)
+        return patterns
+
     if outstanding_value is None:
-        outstanding_match = outstanding_pattern.search(flattened_text)
-        if outstanding_match:
-            outstanding_value = parse_decimal(outstanding_match.group(1).replace(" ", ""))
+        for pattern in iter_patterns(outstanding_patterns):
+            outstanding_match = pattern.search(flattened_text)
+            if outstanding_match:
+                outstanding_value = parse_decimal(outstanding_match.group(1).replace(" ", ""))
+                if outstanding_value is not None:
+                    break
 
     if limit_value is None:
-        limit_match = limit_pattern.search(flattened_text)
-        if limit_match:
-            limit_value = parse_decimal(limit_match.group(1).replace(" ", ""))
+        for pattern in iter_patterns(limit_patterns):
+            limit_match = pattern.search(flattened_text)
+            if limit_match:
+                limit_value = parse_decimal(limit_match.group(1).replace(" ", ""))
+                if limit_value is not None:
+                    break
 
     return {
         "total_outstanding_balance": float(outstanding_value) if outstanding_value is not None else None,
