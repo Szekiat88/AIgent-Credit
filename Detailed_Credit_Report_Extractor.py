@@ -225,17 +225,6 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
     # Read totals from the DETAILED CREDIT REPORT (BANKING ACCOUNTS) section to avoid
     # capturing similarly named fields from other report sections.
     all_section_lines = extract_all_sections(pdf_path, START_MARKER, END_MARKER)
-    detailed_text = "\n".join("\n".join(lines) for lines in all_section_lines)
-
-    if not detailed_text.strip():
-        chunks: List[str] = []
-        with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                chunks.append(page.extract_text() or "")
-        detailed_text = "\n".join(chunks)
-
-    # Normalize mixed tabs/spaces/newlines into single spaces for stable matching.
-    flattened_text = re.sub(r"\s+", " ", detailed_text)
 
     number_capture = r"([0-9][0-9,\s]*(?:\.\d{2})?)"
 
@@ -260,38 +249,71 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
         )
     ]
 
-    outstanding_value = None
-    limit_value = None
-
-    paired_match = paired_totals_pattern.search(flattened_text)
-    if paired_match:
-        outstanding_value = parse_decimal(paired_match.group(1).replace(" ", ""))
-        limit_value = parse_decimal(paired_match.group(2).replace(" ", ""))
-
     def iter_patterns(patterns):
         if isinstance(patterns, re.Pattern):
             return (patterns,)
         return patterns
 
-    if outstanding_value is None:
-        for pattern in iter_patterns(outstanding_patterns):
-            outstanding_match = pattern.search(flattened_text)
-            if outstanding_match:
-                outstanding_value = parse_decimal(outstanding_match.group(1).replace(" ", ""))
-                if outstanding_value is not None:
-                    break
+    def extract_from_text(text: str) -> Dict[str, Optional[Decimal]]:
+        flattened_text = re.sub(r"\s+", " ", text)
+        outstanding_value: Optional[Decimal] = None
+        limit_value: Optional[Decimal] = None
 
-    if limit_value is None:
-        for pattern in iter_patterns(limit_patterns):
-            limit_match = pattern.search(flattened_text)
-            if limit_match:
-                limit_value = parse_decimal(limit_match.group(1).replace(" ", ""))
-                if limit_value is not None:
-                    break
+        paired_match = paired_totals_pattern.search(flattened_text)
+        if paired_match:
+            outstanding_value = parse_decimal(paired_match.group(1).replace(" ", ""))
+            limit_value = parse_decimal(paired_match.group(2).replace(" ", ""))
+
+        if outstanding_value is None:
+            for pattern in iter_patterns(outstanding_patterns):
+                outstanding_match = pattern.search(flattened_text)
+                if outstanding_match:
+                    outstanding_value = parse_decimal(outstanding_match.group(1).replace(" ", ""))
+                    if outstanding_value is not None:
+                        break
+
+        if limit_value is None:
+            for pattern in iter_patterns(limit_patterns):
+                limit_match = pattern.search(flattened_text)
+                if limit_match:
+                    limit_value = parse_decimal(limit_match.group(1).replace(" ", ""))
+                    if limit_value is not None:
+                        break
+
+        return {
+            "outstanding": outstanding_value,
+            "limit": limit_value,
+        }
+
+    per_section_totals: List[Dict[str, Optional[Decimal]]] = []
+    for section_lines in all_section_lines:
+        section_text = "\n".join(section_lines)
+        if section_text.strip():
+            per_section_totals.append(extract_from_text(section_text))
+
+    # Fallback when no detailed section is found.
+    if not per_section_totals:
+        chunks: List[str] = []
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                chunks.append(page.extract_text() or "")
+        full_text = "\n".join(chunks)
+        per_section_totals.append(extract_from_text(full_text))
+
+    outstanding_sum = sum(
+        (item["outstanding"] for item in per_section_totals if item["outstanding"] is not None),
+        Decimal("0"),
+    )
+    limit_sum = sum(
+        (item["limit"] for item in per_section_totals if item["limit"] is not None),
+        Decimal("0"),
+    )
+    has_outstanding = any(item["outstanding"] is not None for item in per_section_totals)
+    has_limit = any(item["limit"] is not None for item in per_section_totals)
 
     return {
-        "total_outstanding_balance": float(outstanding_value) if outstanding_value is not None else None,
-        "total_limit": float(limit_value) if limit_value is not None else None,
+        "total_outstanding_balance": float(outstanding_sum) if has_outstanding else None,
+        "total_limit": float(limit_sum) if has_limit else None,
     }
 
 
