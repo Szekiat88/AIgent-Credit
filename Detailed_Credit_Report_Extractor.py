@@ -141,12 +141,64 @@ def _extract_legal_status_codes(line: str) -> List[str]:
     return re.findall(r"(?<!\d)(1[0-9]|20)(?!\d)", sanitized)
 
 
+def _extract_outstanding_limit_values(line: str) -> Dict[str, Optional[Decimal]]:
+    number_capture = r"([0-9][0-9,\s]*(?:\.\d{2})?)"
+    outstanding_patterns = [
+        re.compile(
+            rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+            re.IGNORECASE,
+        )
+    ]
+    limit_patterns = [
+        re.compile(
+            rf"LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+            re.IGNORECASE,
+        )
+    ]
+    paired_pattern = re.compile(
+        rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}"
+        rf"\s*,?\s*LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+        re.IGNORECASE,
+    )
+
+    flattened_line = re.sub(r"\s+", " ", line)
+    outstanding_value: Optional[Decimal] = None
+    limit_value: Optional[Decimal] = None
+
+    paired_match = paired_pattern.search(flattened_line)
+    if paired_match:
+        outstanding_value = parse_decimal(paired_match.group(1).replace(" ", ""))
+        limit_value = parse_decimal(paired_match.group(2).replace(" ", ""))
+
+    if outstanding_value is None:
+        for pattern in outstanding_patterns:
+            match = pattern.search(flattened_line)
+            if match:
+                outstanding_value = parse_decimal(match.group(1).replace(" ", ""))
+                if outstanding_value is not None:
+                    break
+
+    if limit_value is None:
+        for pattern in limit_patterns:
+            match = pattern.search(flattened_line)
+            if match:
+                limit_value = parse_decimal(match.group(1).replace(" ", ""))
+                if limit_value is not None:
+                    break
+
+    return {
+        "outstanding": outstanding_value,
+        "limit": limit_value,
+    }
+
+
 def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]:
     first_line_numbers_after_date_by_record_no: Dict[str, List[float]] = {}
     next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     next_six_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
     totals_by_record_no_float: Dict[str, float] = {}
     overdraft_comparisons: Dict[str, Dict[str, Optional[float]]] = {}
+    outstanding_limit_comparisons: Dict[str, Dict[str, Optional[float]]] = {}
     legal_status_codes: List[str] = []
 
     for record in records:
@@ -161,6 +213,8 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             ]
         record_overdraft_outstanding = Decimal("0")
         has_overdraft_keyword = False
+        record_outstanding: Optional[Decimal] = None
+        record_limit: Optional[Decimal] = None
 
         for line in record.raw_lines:
             for code in _extract_legal_status_codes(line):
@@ -191,11 +245,32 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                     next_first_digit_totals[key] += next_first_counts.get(key, 0)
                     next_six_digit_totals[key] += next_six_counts.get(key, 0)
 
+            outstanding_limit_values = _extract_outstanding_limit_values(line)
+            if (
+                record_outstanding is None
+                and outstanding_limit_values.get("outstanding") is not None
+            ):
+                record_outstanding = outstanding_limit_values["outstanding"]
+            if record_limit is None and outstanding_limit_values.get("limit") is not None:
+                record_limit = outstanding_limit_values["limit"]
+
         if has_overdraft_keyword:
             overdraft_limit = float(first_line_values[0]) if first_line_values else None
             overdraft_comparisons[str(record.no)] = {
                 "outstanding": float(record_overdraft_outstanding),
                 "limit": overdraft_limit,
+            }
+        if record_outstanding is not None or record_limit is not None:
+            outstanding_float = float(record_outstanding) if record_outstanding is not None else None
+            limit_float = float(record_limit) if record_limit is not None else None
+            outstanding_limit_comparisons[str(record.no)] = {
+                "outstanding": outstanding_float,
+                "limit": limit_float,
+                "within_limit": (
+                    outstanding_float <= limit_float
+                    if outstanding_float is not None and limit_float is not None
+                    else None
+                ),
             }
 
     first_line_numbers_after_date_filtered = {
@@ -213,6 +288,7 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
             "next_six_numbers_digit_counts_0_1_2_3_5_plus": next_six_digit_totals,
         },
         "overdraft_comparisons": overdraft_comparisons,
+        "outstanding_limit_comparisons": outstanding_limit_comparisons,
         "legal_status_codes": legal_status_codes,
         "legal_status_details": [
             f"{code} = {LEGAL_STATUS_CODE_MAP.get(code, 'Unknown')}"
