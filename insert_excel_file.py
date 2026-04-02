@@ -204,13 +204,15 @@ def _merge_overdraft_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, An
     return {"overdraft_comparisons": merged}
 
 
-def _compute_banking_facility_status(analysis: Dict[str, Any]) -> str:
-    """Compute per-record banking outstanding-vs-limit status from extracted comparisons."""
+def _compute_banking_facility_status(analysis: Dict[str, Any]) -> tuple[str, Optional[float], Optional[float]]:
+    """Compute per-record banking outstanding-vs-limit status and first valid values."""
     comparisons = analysis.get("outstanding_limit_comparisons", {})
     if not comparisons:
-        return "N/A"
+        return "N/A", None, None
 
     entries: List[str] = []
+    section_outstanding: Optional[float] = None
+    section_limit: Optional[float] = None
     for record_key in sorted(comparisons.keys(), key=str):
         values = comparisons.get(record_key)
         if not isinstance(values, dict):
@@ -219,13 +221,20 @@ def _compute_banking_facility_status(analysis: Dict[str, Any]) -> str:
         limit = values.get("limit")
         if outstanding is None or limit is None:
             continue
-        status = "YES" if float(outstanding) <= float(limit) else "NO"
+        outstanding_value = float(outstanding)
+        limit_value = float(limit)
+        status = "YES" if outstanding_value <= limit_value else "NO"
         entries.append(
-            f"{status}, outstanding: {_format_with_commas(float(outstanding))}, "
-            f"limit: {_format_with_commas(float(limit))}"
+            f"{status}, outstanding: {_format_with_commas(outstanding_value)}, "
+            f"limit: {_format_with_commas(limit_value)}"
         )
+        if section_outstanding is None and section_limit is None:
+            section_outstanding = outstanding_value
+            section_limit = limit_value
 
-    return " | ".join(entries) if entries else "N/A"
+    if not entries:
+        return "N/A", None, None
+    return " | ".join(entries), section_outstanding, section_limit
 
 
 def score_to_equivalent(score: Optional[int]) -> Optional[str]:
@@ -406,12 +415,6 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     add_multi_subject_data("Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)", "Total_Enquiries_Last_12_months", _format_number)
     add_multi_subject_data("Special Attention Account (per primary CRA report)", "Special_Attention_Account", _format_number)
 
-    # Prefer calculated detailed totals for liabilities summary rows.
-    for i in range(1, num_subjects + 1):
-        suffix = f" {i}" if i > 1 else ""
-        data[f"Summary of Total Liabilities (Outstanding) (per primary CRA report){suffix}"] = _format_number(total_outstanding)
-        data[f"Summary of Total Liabilities (Total Limit) (per primary CRA report){suffix}"] = _format_number(total_limit)
-    
     # Company-level data
     sections = detailed.get("sections", [])
     if not sections:
@@ -424,15 +427,27 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         f"limit: {_format_with_commas(total_limit)}"
     )
     banking_status_by_section: List[str] = []
+    banking_outstanding_by_section: List[Optional[float]] = []
+    banking_limit_by_section: List[Optional[float]] = []
     for section in sections:
         analysis = section.get("account_line_analysis", {})
-        section_status = _compute_banking_facility_status(analysis)
+        section_status, section_outstanding, section_limit = _compute_banking_facility_status(analysis)
         banking_status_by_section.append(
             section_status if section_status != "N/A" else fallback_banking_status
+        )
+        banking_outstanding_by_section.append(
+            section_outstanding if section_outstanding is not None else total_outstanding
+        )
+        banking_limit_by_section.append(
+            section_limit if section_limit is not None else total_limit
         )
 
     if not banking_status_by_section:
         banking_status_by_section = [fallback_banking_status]
+    if not banking_outstanding_by_section:
+        banking_outstanding_by_section = [total_outstanding]
+    if not banking_limit_by_section:
+        banking_limit_by_section = [total_limit]
     non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
     ccris_legal_status = _extract_ccris_legal_status(sections)
     
@@ -443,8 +458,20 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
             if i - 1 < len(banking_status_by_section)
             else fallback_banking_status
         )
+        section_outstanding = (
+            banking_outstanding_by_section[i - 1]
+            if i - 1 < len(banking_outstanding_by_section)
+            else total_outstanding
+        )
+        section_limit = (
+            banking_limit_by_section[i - 1]
+            if i - 1 < len(banking_limit_by_section)
+            else total_limit
+        )
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
         data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
+        data[f"Summary of Total Liabilities (Outstanding) (per primary CRA report){suffix}"] = _format_number(section_outstanding)
+        data[f"Summary of Total Liabilities (Total Limit) (per primary CRA report){suffix}"] = _format_number(section_limit)
         data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_within
         data[f"CCRIS Loan Account - Legal Status (per primary CRA report){suffix}"] = ccris_legal_status
         data[f"Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report){suffix}"] = non_bank_conduct
