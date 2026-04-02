@@ -234,6 +234,10 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
                 chunks.append(page.extract_text() or "")
         detailed_text = "\n".join(chunks)
 
+    # Some PDFs render the highlighted summary row as stacked cells, e.g.
+    # "TOTAL\nOUTSTANDING\nBALANCE:\n15,520,690.00" and
+    # "TOTAL\nLIMIT:\n17,714,987.00".
+    # Keep patterns permissive about whitespace/newlines and optional currency labels.
     outstanding_patterns = [
         re.compile(
             r"TOTAL\s+OUTSTANDING(?:\s+BALANCE)?\s*:\s*([0-9,]+(?:\.\d{2})?)",
@@ -241,6 +245,11 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
         ),
         re.compile(
             r"TOTAL\s+OUTSTANDING\s+([0-9,]+(?:\.\d{2})?)\s+BALANCE\s*:",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"TOTAL\s+OUTSTANDING(?:\s+BALANCE)?(?:\s*\(RM\))?\s*[:\-]?\s*"
+            r"(?:RM\s*)?([0-9][0-9,\s]*(?:\.\d{2})?)",
             re.IGNORECASE,
         ),
     ]
@@ -253,13 +262,17 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
             r"TOTAL\s+LIMIT\s+([0-9,]+(?:\.\d{2})?)",
             re.IGNORECASE,
         ),
+        re.compile(
+            r"TOTAL\s+LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?([0-9][0-9,\s]*(?:\.\d{2})?)",
+            re.IGNORECASE,
+        ),
     ]
 
     outstanding_value = None
     for pattern in outstanding_patterns:
         match = pattern.search(detailed_text)
         if match:
-            outstanding_value = parse_decimal(match.group(1))
+            outstanding_value = parse_decimal(match.group(1).replace(" ", ""))
             if outstanding_value is not None:
                 break
 
@@ -267,7 +280,7 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
     for pattern in limit_patterns:
         match = pattern.search(detailed_text)
         if match:
-            limit_value = parse_decimal(match.group(1))
+            limit_value = parse_decimal(match.group(1).replace(" ", ""))
             if limit_value is not None:
                 break
 
