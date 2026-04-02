@@ -432,18 +432,31 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
     
     overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
-    banking_status = _compute_banking_facility_status(_merge_outstanding_limit_comparisons(sections))
-    if banking_status == "N/A":
-        banking_status = (
-            f"{_within_limit(total_outstanding, total_limit)}, "
-            f"outstanding: {_format_with_commas(total_outstanding)}, "
-            f"limit: {_format_with_commas(total_limit)}"
+    fallback_banking_status = (
+        f"{_within_limit(total_outstanding, total_limit)}, "
+        f"outstanding: {_format_with_commas(total_outstanding)}, "
+        f"limit: {_format_with_commas(total_limit)}"
+    )
+    banking_status_by_section: List[str] = []
+    for section in sections:
+        analysis = section.get("account_line_analysis", {})
+        section_status = _compute_banking_facility_status(analysis)
+        banking_status_by_section.append(
+            section_status if section_status != "N/A" else fallback_banking_status
         )
+
+    if not banking_status_by_section:
+        banking_status_by_section = [fallback_banking_status]
     non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
     ccris_legal_status = _extract_ccris_legal_status(sections)
     
     for i in range(1, num_subjects + 1):
         suffix = f" {i}" if i > 1 else ""
+        banking_status = (
+            banking_status_by_section[i - 1]
+            if i - 1 < len(banking_status_by_section)
+            else fallback_banking_status
+        )
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
         data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
         data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_within
