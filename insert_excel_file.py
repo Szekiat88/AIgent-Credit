@@ -90,6 +90,16 @@ def _format_number(value: Optional[float | int]) -> Optional[str]:
     return str(value)
 
 
+def _format_number_or_na(value: Optional[float | int | str]) -> str:
+    """Format number-like values and coerce missing/blank values to N/A."""
+    formatted = _format_number(value)
+    if formatted is None:
+        return "N/A"
+    if isinstance(formatted, str) and not formatted.strip():
+        return "N/A"
+    return formatted
+
+
 def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
     """Format MIA counts for display."""
     counts = {
@@ -379,7 +389,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     add_multi_subject_data("Legal Action taken (from Banking) (per primary CRA report)", "Legal_Action_taken_from_Banking", _format_number)
     add_multi_subject_data("Existing No. of Facility (from Banking) (per primary CRA report)", "Existing_No_of_Facility_from_Banking", _format_number)
     add_multi_subject_data("Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)", "Legal_Suits", _format_number)
-    add_multi_subject_data("Trade / Credit Reference (per primary CRA report)", "Trade_Credit_Reference", _format_number)
+    add_multi_subject_data("Trade / Credit Reference (per primary CRA report)", "Trade_Credit_Reference", _format_number_or_na)
 
     
     # Legal Case Status
