@@ -211,35 +211,11 @@ def _compute_banking_facility_status(analysis: Dict[str, Any]) -> str:
             continue
         status = "YES" if float(outstanding) <= float(limit) else "NO"
         entries.append(
-            f"{record_key}: {status}, outstanding: {_format_with_commas(float(outstanding))}, "
+            f"{status}, outstanding: {_format_with_commas(float(outstanding))}, "
             f"limit: {_format_with_commas(float(limit))}"
         )
 
     return " | ".join(entries) if entries else "N/A"
-
-
-def _merge_outstanding_limit_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Merge line-level outstanding/limit comparisons across detailed report sections."""
-    merged: Dict[str, Dict[str, Optional[float]]] = {}
-
-    for section in sections:
-        analysis = section.get("account_line_analysis", {})
-        comparisons = analysis.get("outstanding_limit_comparisons", {})
-        if not isinstance(comparisons, dict):
-            continue
-
-        section_number = section.get("section_number")
-        for record_no, values in comparisons.items():
-            if not isinstance(values, dict):
-                continue
-
-            key = f"{section_number}:{record_no}" if section_number is not None else str(record_no)
-            merged[key] = {
-                "outstanding": values.get("outstanding"),
-                "limit": values.get("limit"),
-            }
-
-    return {"outstanding_limit_comparisons": merged}
 
 
 def score_to_equivalent(score: Optional[int]) -> Optional[str]:
