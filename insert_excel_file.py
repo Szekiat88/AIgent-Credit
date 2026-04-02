@@ -195,34 +195,27 @@ def _merge_overdraft_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, An
 
 
 def _compute_banking_facility_status(analysis: Dict[str, Any]) -> str:
-    """Compute total banking outstanding-vs-limit status from extracted comparisons."""
+    """Compute per-record banking outstanding-vs-limit status from extracted comparisons."""
     comparisons = analysis.get("outstanding_limit_comparisons", {})
     if not comparisons:
         return "N/A"
 
-    total_outstanding = 0.0
-    total_limit = 0.0
-    has_pair = False
-
-    for values in comparisons.values():
+    entries: List[str] = []
+    for record_key in sorted(comparisons.keys(), key=str):
+        values = comparisons.get(record_key)
         if not isinstance(values, dict):
             continue
         outstanding = values.get("outstanding")
         limit = values.get("limit")
         if outstanding is None or limit is None:
             continue
-        has_pair = True
-        total_outstanding += float(outstanding)
-        total_limit += float(limit)
+        status = "YES" if float(outstanding) <= float(limit) else "NO"
+        entries.append(
+            f"{record_key}: {status}, outstanding: {_format_with_commas(float(outstanding))}, "
+            f"limit: {_format_with_commas(float(limit))}"
+        )
 
-    if not has_pair:
-        return "N/A"
-
-    status = "YES" if total_outstanding <= total_limit else "NO"
-    return (
-        f"{status}, outstanding: {_format_with_commas(total_outstanding)}, "
-        f"limit: {_format_with_commas(total_limit)}"
-    )
+    return " | ".join(entries) if entries else "N/A"
 
 
 def _merge_outstanding_limit_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, Any]:
