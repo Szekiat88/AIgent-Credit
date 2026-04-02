@@ -234,42 +234,60 @@ def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
                 chunks.append(page.extract_text() or "")
         detailed_text = "\n".join(chunks)
 
+    # Normalize mixed tabs/spaces/newlines into single spaces for stable matching.
+    flattened_text = re.sub(r"\s+", " ", detailed_text)
+
+    number_capture = r"([0-9][0-9,\s]*(?:\.\d{2})?)"
+
+    # Compact format seen in extracted lines:
+    # "TOTAL TOTAL OUTSTANDING 15,520,690.00 LIMIT: 17,714,987.00"
+    # Do not require the word "BALANCE" because many files only show "OUTSTANDING".
+    paired_totals_pattern = re.compile(
+        rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}"
+        rf"\s+LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+        re.IGNORECASE,
+    )
     outstanding_patterns = [
         re.compile(
-            r"TOTAL\s+OUTSTANDING(?:\s+BALANCE)?\s*:\s*([0-9,]+(?:\.\d{2})?)",
+            rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
             re.IGNORECASE,
-        ),
-        re.compile(
-            r"TOTAL\s+OUTSTANDING\s+([0-9,]+(?:\.\d{2})?)\s+BALANCE\s*:",
-            re.IGNORECASE,
-        ),
+        )
     ]
     limit_patterns = [
         re.compile(
-            r"TOTAL\s+LIMIT\s*:\s*([0-9,]+(?:\.\d{2})?)",
+            rf"LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
             re.IGNORECASE,
-        ),
-        re.compile(
-            r"TOTAL\s+LIMIT\s+([0-9,]+(?:\.\d{2})?)",
-            re.IGNORECASE,
-        ),
+        )
     ]
 
     outstanding_value = None
-    for pattern in outstanding_patterns:
-        match = pattern.search(detailed_text)
-        if match:
-            outstanding_value = parse_decimal(match.group(1))
-            if outstanding_value is not None:
-                break
-
     limit_value = None
-    for pattern in limit_patterns:
-        match = pattern.search(detailed_text)
-        if match:
-            limit_value = parse_decimal(match.group(1))
-            if limit_value is not None:
-                break
+
+    paired_match = paired_totals_pattern.search(flattened_text)
+    if paired_match:
+        outstanding_value = parse_decimal(paired_match.group(1).replace(" ", ""))
+        limit_value = parse_decimal(paired_match.group(2).replace(" ", ""))
+
+    def iter_patterns(patterns):
+        if isinstance(patterns, re.Pattern):
+            return (patterns,)
+        return patterns
+
+    if outstanding_value is None:
+        for pattern in iter_patterns(outstanding_patterns):
+            outstanding_match = pattern.search(flattened_text)
+            if outstanding_match:
+                outstanding_value = parse_decimal(outstanding_match.group(1).replace(" ", ""))
+                if outstanding_value is not None:
+                    break
+
+    if limit_value is None:
+        for pattern in iter_patterns(limit_patterns):
+            limit_match = pattern.search(flattened_text)
+            if limit_match:
+                limit_value = parse_decimal(limit_match.group(1).replace(" ", ""))
+                if limit_value is not None:
+                    break
 
     return {
         "total_outstanding_balance": float(outstanding_value) if outstanding_value is not None else None,
