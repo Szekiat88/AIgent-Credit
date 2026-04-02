@@ -218,6 +218,34 @@ def _compute_banking_facility_status(analysis: Dict[str, Any]) -> str:
     return " | ".join(entries) if entries else "N/A"
 
 
+def _compute_section_outstanding_limit_totals(
+    analysis: Dict[str, Any],
+) -> tuple[Optional[float], Optional[float]]:
+    """Compute section-level outstanding and limit totals from extracted comparisons."""
+    comparisons = analysis.get("outstanding_limit_comparisons", {})
+    if not isinstance(comparisons, dict) or not comparisons:
+        return None, None
+
+    total_outstanding = 0.0
+    total_limit = 0.0
+    has_pair = False
+
+    for values in comparisons.values():
+        if not isinstance(values, dict):
+            continue
+        outstanding = values.get("outstanding")
+        limit = values.get("limit")
+        if outstanding is None or limit is None:
+            continue
+        total_outstanding += float(outstanding)
+        total_limit += float(limit)
+        has_pair = True
+
+    if not has_pair:
+        return None, None
+    return total_outstanding, total_limit
+
+
 def _merge_outstanding_limit_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Merge line-level outstanding/limit comparisons across detailed report sections."""
     merged: Dict[str, Dict[str, Optional[float]]] = {}
@@ -420,12 +448,6 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     add_multi_subject_data("Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)", "Total_Enquiries_Last_12_months", _format_number)
     add_multi_subject_data("Special Attention Account (per primary CRA report)", "Special_Attention_Account", _format_number)
 
-    # Prefer calculated detailed totals for liabilities summary rows.
-    for i in range(1, num_subjects + 1):
-        suffix = f" {i}" if i > 1 else ""
-        data[f"Summary of Total Liabilities (Outstanding) (per primary CRA report){suffix}"] = _format_number(total_outstanding)
-        data[f"Summary of Total Liabilities (Total Limit) (per primary CRA report){suffix}"] = _format_number(total_limit)
-    
     # Company-level data
     sections = detailed.get("sections", [])
     if not sections:
@@ -444,6 +466,12 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         banking_status_by_section.append(
             section_status if section_status != "N/A" else fallback_banking_status
         )
+    section_outstanding_limit_totals: List[tuple[Optional[float], Optional[float]]] = []
+    for section in sections:
+        analysis = section.get("account_line_analysis", {})
+        section_outstanding_limit_totals.append(
+            _compute_section_outstanding_limit_totals(analysis)
+        )
 
     if not banking_status_by_section:
         banking_status_by_section = [fallback_banking_status]
@@ -457,6 +485,17 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
             if i - 1 < len(banking_status_by_section)
             else fallback_banking_status
         )
+        section_outstanding, section_limit = (
+            section_outstanding_limit_totals[i - 1]
+            if i - 1 < len(section_outstanding_limit_totals)
+            else (None, None)
+        )
+        summary_outstanding = (
+            section_outstanding if section_outstanding is not None else total_outstanding
+        )
+        summary_limit = section_limit if section_limit is not None else total_limit
+        data[f"Summary of Total Liabilities (Outstanding) (per primary CRA report){suffix}"] = _format_number(summary_outstanding)
+        data[f"Summary of Total Liabilities (Total Limit) (per primary CRA report){suffix}"] = _format_number(summary_limit)
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
         data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
         data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_within
