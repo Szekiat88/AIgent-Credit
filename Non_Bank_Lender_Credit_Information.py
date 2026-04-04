@@ -1,6 +1,8 @@
 import re
 from typing import List, Dict, Any, Optional, Tuple
 
+import pdfplumber
+
 from pdf_utils import pick_pdf_file, extract_section_lines, RE_DATE
 
 RE_TOTAL_LINE = re.compile(r"^\s*TOTAL\s+[\d,]+\.\d{2}\s+TOTAL\s+[\d,]+\.\d{2}\s*$", re.IGNORECASE)
@@ -21,6 +23,27 @@ MONTHS = [
 # =============================
 START_MARKER = "NON-BANK LENDER CREDIT INFORMATION (NLCI)"
 END_MARKER = "WRITTEN-OFF ACCOUNT"
+
+
+def _has_required_markers(pdf_path: str, start_marker: str, end_marker: str) -> bool:
+    """
+    Return True only when both start and end markers exist in the PDF text.
+    This avoids extracting partial wording when one marker is missing.
+    """
+    start_found = False
+    end_found = False
+
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            text = (page.extract_text() or "").lower()
+            if not start_found and start_marker.lower() in text:
+                start_found = True
+            if not end_found and end_marker.lower() in text:
+                end_found = True
+            if start_found and end_found:
+                return True
+
+    return False
 
 def _month_seq(start_idx: int, direction: int, length: int):
     seq = []
@@ -236,7 +259,6 @@ def parse_outstanding_with_stats(lines: List[str]) -> Dict[str, Any]:
     }
 
 def extract_non_bank_lender_credit_information(pdf_path: str) -> Dict[str, Any]:
-    section_lines = extract_section_lines(pdf_path, START_MARKER, END_MARKER)
     result: Dict[str, Any] = {
         "source_pdf": pdf_path,
         "section": {"start_marker": START_MARKER, "end_marker": END_MARKER},
@@ -244,8 +266,13 @@ def extract_non_bank_lender_credit_information(pdf_path: str) -> Dict[str, Any]:
         "stats_totals": None,
         "totals": None,
     }
+    if not _has_required_markers(pdf_path, START_MARKER, END_MARKER):
+        result["error"] = "Required non-bank lender section markers not found."
+        return result
+
+    section_lines = extract_section_lines(pdf_path, START_MARKER, END_MARKER)
     if not section_lines:
-        result["error"] = "Non-bank lender section not found."
+        result["error"] = "Non-bank lender section contains no extractable lines."
         return result
 
     try:
