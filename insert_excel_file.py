@@ -99,6 +99,13 @@ def _format_number_or_na(value: Optional[float | int | str]) -> str:
         return "N/A"
     return formatted
 
+def _text_or_na(value: Any) -> str:
+    """Return trimmed text or N/A for missing/blank values."""
+    if value is None:
+        return "N/A"
+    text = str(value).strip()
+    return text if text else "N/A"
+
 
 def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
     """Format MIA counts for display."""
@@ -317,7 +324,7 @@ def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
     
     # Legal status
     markers = sorted({record.get("legal_marker") for record in records if record.get("legal_marker")})
-    legal_status = ", ".join(markers) if markers else "No"
+    legal_status = ", ".join(markers) if markers else "N/A"
     
     return totals, stats, conduct_count, legal_status
 
@@ -376,6 +383,8 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     total_outstanding = totals.get("total_outstanding_balance") or summary.get("Borrower_Outstanding_RM")
     
     non_bank_totals, non_bank_stats, non_bank_conduct, non_bank_legal = _get_non_bank_data(non_bank)
+    non_bank_conduct = _text_or_na(non_bank_conduct)
+    non_bank_legal = _text_or_na(non_bank_legal)
     
     # Detect number of subjects
     num_subjects = 1
