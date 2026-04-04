@@ -320,7 +320,19 @@ def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
 
 def _within_limit(outstanding, limit) -> str:
     """Check if outstanding is within limit."""
-    return "YES" if outstanding is not None and limit is not None and outstanding <= limit else "NO"
+    if outstanding is None or limit is None:
+        return "N/A"
+    return "YES" if outstanding <= limit else "NO"
+
+def _format_limit_comparison_status(outstanding, limit) -> str:
+    """Format a limit comparison status with values."""
+    if outstanding is None or limit is None:
+        return "N/A"
+    return (
+        f"{_within_limit(outstanding, limit)}, "
+        f"outstanding: {_format_with_commas(outstanding)}, "
+        f"limit: {_format_with_commas(limit)}"
+    )
 
 def _format_limit_comparison_status(outstanding, limit) -> str:
     """Format a limit comparison status with values."""
