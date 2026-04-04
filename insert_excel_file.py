@@ -99,6 +99,13 @@ def _format_number_or_na(value: Optional[float | int | str]) -> str:
         return "N/A"
     return formatted
 
+def _text_or_na(value: Any) -> str:
+    """Return trimmed text or N/A for missing/blank values."""
+    if value is None:
+        return "N/A"
+    text = str(value).strip()
+    return text if text else "N/A"
+
 
 def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
     """Format MIA counts for display."""
@@ -313,14 +320,26 @@ def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
     
     # Legal status
     markers = sorted({record.get("legal_marker") for record in records if record.get("legal_marker")})
-    legal_status = ", ".join(markers) if markers else "No"
+    legal_status = ", ".join(markers) if markers else "N/A"
     
     return totals, stats, conduct_count, legal_status
 
 
 def _within_limit(outstanding, limit) -> str:
     """Check if outstanding is within limit."""
-    return "YES" if outstanding is not None and limit is not None and outstanding <= limit else "NO"
+    if outstanding is None or limit is None:
+        return "N/A"
+    return "YES" if outstanding <= limit else "NO"
+
+def _format_limit_comparison_status(outstanding, limit) -> str:
+    """Format a limit comparison status with values."""
+    if outstanding is None or limit is None:
+        return "N/A"
+    return (
+        f"{_within_limit(outstanding, limit)}, "
+        f"outstanding: {_format_with_commas(outstanding)}, "
+        f"limit: {_format_with_commas(limit)}"
+    )
 
 
 def _extract_ccris_legal_status(sections: List[Dict[str, Any]]) -> str:
@@ -360,6 +379,8 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
     total_outstanding = totals.get("total_outstanding_balance") or summary.get("Borrower_Outstanding_RM")
     
     non_bank_totals, non_bank_stats, non_bank_conduct, non_bank_legal = _get_non_bank_data(non_bank)
+    non_bank_conduct = _text_or_na(non_bank_conduct)
+    non_bank_legal = _text_or_na(non_bank_legal)
     
     # Detect number of subjects
     num_subjects = 1
@@ -421,11 +442,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
     
     overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
-    fallback_banking_status = (
-        f"{_within_limit(total_outstanding, total_limit)}, "
-        f"outstanding: {_format_with_commas(total_outstanding)}, "
-        f"limit: {_format_with_commas(total_limit)}"
-    )
+    fallback_banking_status = _format_limit_comparison_status(total_outstanding, total_limit)
     banking_status_by_section: List[str] = []
     banking_outstanding_by_section: List[Optional[float]] = []
     banking_limit_by_section: List[Optional[float]] = []
@@ -448,7 +465,10 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         banking_outstanding_by_section = [total_outstanding]
     if not banking_limit_by_section:
         banking_limit_by_section = [total_limit]
-    non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
+    non_bank_within_primary = _format_limit_comparison_status(
+        non_bank_totals.get("total_outstanding"),
+        non_bank_totals.get("total_limit"),
+    )
     ccris_legal_status = _extract_ccris_legal_status(sections)
     
     for i in range(1, num_subjects + 1):
@@ -468,6 +488,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
             if i - 1 < len(banking_limit_by_section)
             else total_limit
         )
+        non_bank_within = non_bank_within_primary if i == 1 else "N/A"
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
         data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
         data[f"Summary of Total Liabilities (Outstanding) (per primary CRA report){suffix}"] = _format_number(section_outstanding)
