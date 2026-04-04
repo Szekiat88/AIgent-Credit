@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pdf_utils import pick_pdf_file, extract_section_lines, RE_DATE
 
 RE_TOTAL_LINE = re.compile(r"^\s*TOTAL\s+[\d,]+\.\d{2}\s+TOTAL\s+[\d,]+\.\d{2}\s*$", re.IGNORECASE)
+RE_TOTAL_VALUES = re.compile(r"TOTAL\s+([\d,]+\.\d{2})\s+TOTAL\s+([\d,]+\.\d{2})", re.IGNORECASE)
 RE_OUTSTANDING = re.compile(r"\bOUTSTANDING\s+CREDIT\b", re.IGNORECASE)
 RE_INT_1_2 = re.compile(r"^\d{1,2}$")
 
@@ -76,7 +77,7 @@ def extract_block(lines: List[str]) -> Tuple[List[str], Optional[str], Optional[
             continue
 
         if in_block:
-            if RE_TOTAL_LINE.match(line):
+            if RE_TOTAL_LINE.match(line) or RE_TOTAL_VALUES.search(line):
                 total_line = line
                 break
             if re.match(r"^\s*\d+\s", line):   # record line starts with number
@@ -212,7 +213,7 @@ def parse_outstanding_with_stats(lines: List[str]) -> Dict[str, Any]:
 
     totals = None
     if total_line:
-        m = re.search(r"TOTAL\s+([\d,]+\.\d{2})\s+TOTAL\s+([\d,]+\.\d{2})", total_line, re.IGNORECASE)
+        m = RE_TOTAL_VALUES.search(total_line)
         if m:
             totals = {
                 "total_limit": float(m.group(1).replace(",", "")),
