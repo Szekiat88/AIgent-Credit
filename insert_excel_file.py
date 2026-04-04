@@ -292,6 +292,10 @@ def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
     totals = non_bank.get("totals", {}) if isinstance(non_bank.get("totals"), dict) else {}
     stats = non_bank.get("stats_totals", {}) if isinstance(non_bank.get("stats_totals"), dict) else {}
     records = non_bank.get("records", []) if isinstance(non_bank.get("records"), list) else []
+    extraction_error = non_bank.get("error")
+
+    if extraction_error:
+        return totals, stats, "N/A", "N/A"
     
     # Format MIA counts for conduct count display
     mia_formatted = _format_non_bank_mia(stats)
