@@ -334,14 +334,6 @@ def _format_limit_comparison_status(outstanding, limit) -> str:
         f"limit: {_format_with_commas(limit)}"
     )
 
-def _format_limit_comparison_status(outstanding, limit) -> str:
-    """Format a limit comparison status with values."""
-    return (
-        f"{_within_limit(outstanding, limit)}, "
-        f"outstanding: {_format_with_commas(outstanding)}, "
-        f"limit: {_format_with_commas(limit)}"
-    )
-
 
 def _extract_ccris_legal_status(sections: List[Dict[str, Any]]) -> str:
     """Extract and format CCRIS legal status codes from detailed banking sections."""
@@ -464,7 +456,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         banking_outstanding_by_section = [total_outstanding]
     if not banking_limit_by_section:
         banking_limit_by_section = [total_limit]
-    non_bank_within = _format_limit_comparison_status(
+    non_bank_within_primary = _format_limit_comparison_status(
         non_bank_totals.get("total_outstanding"),
         non_bank_totals.get("total_limit"),
     )
@@ -487,6 +479,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
             if i - 1 < len(banking_limit_by_section)
             else total_limit
         )
+        non_bank_within = non_bank_within_primary if i == 1 else "N/A"
         data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
         data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
         data[f"Summary of Total Liabilities (Outstanding) (per primary CRA report){suffix}"] = _format_number(section_outstanding)
