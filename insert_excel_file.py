@@ -322,6 +322,14 @@ def _within_limit(outstanding, limit) -> str:
     """Check if outstanding is within limit."""
     return "YES" if outstanding is not None and limit is not None and outstanding <= limit else "NO"
 
+def _format_limit_comparison_status(outstanding, limit) -> str:
+    """Format a limit comparison status with values."""
+    return (
+        f"{_within_limit(outstanding, limit)}, "
+        f"outstanding: {_format_with_commas(outstanding)}, "
+        f"limit: {_format_with_commas(limit)}"
+    )
+
 
 def _extract_ccris_legal_status(sections: List[Dict[str, Any]]) -> str:
     """Extract and format CCRIS legal status codes from detailed banking sections."""
@@ -421,11 +429,7 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
     
     overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
-    fallback_banking_status = (
-        f"{_within_limit(total_outstanding, total_limit)}, "
-        f"outstanding: {_format_with_commas(total_outstanding)}, "
-        f"limit: {_format_with_commas(total_limit)}"
-    )
+    fallback_banking_status = _format_limit_comparison_status(total_outstanding, total_limit)
     banking_status_by_section: List[str] = []
     banking_outstanding_by_section: List[Optional[float]] = []
     banking_limit_by_section: List[Optional[float]] = []
@@ -448,7 +452,10 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         banking_outstanding_by_section = [total_outstanding]
     if not banking_limit_by_section:
         banking_limit_by_section = [total_limit]
-    non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
+    non_bank_within = _format_limit_comparison_status(
+        non_bank_totals.get("total_outstanding"),
+        non_bank_totals.get("total_limit"),
+    )
     ccris_legal_status = _extract_ccris_legal_status(sections)
     
     for i in range(1, num_subjects + 1):
