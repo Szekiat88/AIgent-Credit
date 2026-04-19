@@ -4,7 +4,8 @@ from typing import Any, Dict, Optional
 
 from Detailed_Credit_Report_Extractor import extract_detailed_credit_report
 from Non_Bank_Lender_Credit_Information import extract_non_bank_lender_credit_information
-from load_file_version import extract_fields, pick_pdf_file
+from load_file_version import extract_fields
+from pdf_utils import pick_pdf_file
 
 
 def merge_reports(pdf_path: str) -> Dict[str, Any]:

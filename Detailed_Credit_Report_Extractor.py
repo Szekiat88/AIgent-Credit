@@ -5,9 +5,13 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from decimal import Decimal
 
-import pdfplumber
-
-from pdf_utils import parse_decimal, extract_all_sections, RE_MONEY
+from pdf_utils import (
+    parse_decimal,
+    extract_all_sections,
+    parse_outstanding_limit_from_text,
+    read_pdf_text,
+    RE_MONEY,
+)
 
 
 # =============================
@@ -141,57 +145,6 @@ def _extract_legal_status_codes(line: str) -> List[str]:
     return re.findall(r"(?<!\d)(1[0-9]|20)(?!\d)", sanitized)
 
 
-def _extract_outstanding_limit_values(line: str) -> Dict[str, Optional[Decimal]]:
-    number_capture = r"([0-9][0-9,\s]*(?:\.\d{2})?)"
-    outstanding_patterns = [
-        re.compile(
-            rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
-            re.IGNORECASE,
-        )
-    ]
-    limit_patterns = [
-        re.compile(
-            rf"LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
-            re.IGNORECASE,
-        )
-    ]
-    paired_pattern = re.compile(
-        rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}"
-        rf"\s*,?\s*LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
-        re.IGNORECASE,
-    )
-
-    flattened_line = re.sub(r"\s+", " ", line)
-    outstanding_value: Optional[Decimal] = None
-    limit_value: Optional[Decimal] = None
-
-    paired_match = paired_pattern.search(flattened_line)
-    if paired_match:
-        outstanding_value = parse_decimal(paired_match.group(1).replace(" ", ""))
-        limit_value = parse_decimal(paired_match.group(2).replace(" ", ""))
-
-    if outstanding_value is None:
-        for pattern in outstanding_patterns:
-            match = pattern.search(flattened_line)
-            if match:
-                outstanding_value = parse_decimal(match.group(1).replace(" ", ""))
-                if outstanding_value is not None:
-                    break
-
-    if limit_value is None:
-        for pattern in limit_patterns:
-            match = pattern.search(flattened_line)
-            if match:
-                limit_value = parse_decimal(match.group(1).replace(" ", ""))
-                if limit_value is not None:
-                    break
-
-    return {
-        "outstanding": outstanding_value,
-        "limit": limit_value,
-    }
-
-
 def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]:
     first_line_numbers_after_date_by_record_no: Dict[str, List[float]] = {}
     next_first_digit_totals = {"0": 0, "1": 0, "2": 0, "3": 0, "5_plus": 0}
@@ -245,7 +198,7 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
                     next_first_digit_totals[key] += next_first_counts.get(key, 0)
                     next_six_digit_totals[key] += next_six_counts.get(key, 0)
 
-            outstanding_limit_values = _extract_outstanding_limit_values(line)
+            outstanding_limit_values = parse_outstanding_limit_from_text(line)
             if (
                 record_outstanding is None
                 and outstanding_limit_values.get("outstanding") is not None
@@ -297,84 +250,24 @@ def analyze_account_lines(records: List[BankingAccountRecord]) -> Dict[str, Any]
     }
 
 
-def extract_total_balances(pdf_path: str) -> Dict[str, Optional[float]]:
+def extract_total_balances(
+    pdf_path: str,
+    all_section_lines: Optional[List[List[str]]] = None,
+) -> Dict[str, Optional[float]]:
     # Read totals from the DETAILED CREDIT REPORT (BANKING ACCOUNTS) section to avoid
     # capturing similarly named fields from other report sections.
-    all_section_lines = extract_all_sections(pdf_path, START_MARKER, END_MARKER)
-
-    number_capture = r"([0-9][0-9,\s]*(?:\.\d{2})?)"
-
-    # Compact format seen in extracted lines:
-    # "TOTAL TOTAL OUTSTANDING 15,520,690.00 LIMIT: 17,714,987.00"
-    # Do not require the word "BALANCE" because many files only show "OUTSTANDING".
-    paired_totals_pattern = re.compile(
-        rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}"
-        rf"\s+LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
-        re.IGNORECASE,
-    )
-    outstanding_patterns = [
-        re.compile(
-            rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
-            re.IGNORECASE,
-        )
-    ]
-    limit_patterns = [
-        re.compile(
-            rf"LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
-            re.IGNORECASE,
-        )
-    ]
-
-    def iter_patterns(patterns):
-        if isinstance(patterns, re.Pattern):
-            return (patterns,)
-        return patterns
-
-    def extract_from_text(text: str) -> Dict[str, Optional[Decimal]]:
-        flattened_text = re.sub(r"\s+", " ", text)
-        outstanding_value: Optional[Decimal] = None
-        limit_value: Optional[Decimal] = None
-
-        paired_match = paired_totals_pattern.search(flattened_text)
-        if paired_match:
-            outstanding_value = parse_decimal(paired_match.group(1).replace(" ", ""))
-            limit_value = parse_decimal(paired_match.group(2).replace(" ", ""))
-
-        if outstanding_value is None:
-            for pattern in iter_patterns(outstanding_patterns):
-                outstanding_match = pattern.search(flattened_text)
-                if outstanding_match:
-                    outstanding_value = parse_decimal(outstanding_match.group(1).replace(" ", ""))
-                    if outstanding_value is not None:
-                        break
-
-        if limit_value is None:
-            for pattern in iter_patterns(limit_patterns):
-                limit_match = pattern.search(flattened_text)
-                if limit_match:
-                    limit_value = parse_decimal(limit_match.group(1).replace(" ", ""))
-                    if limit_value is not None:
-                        break
-
-        return {
-            "outstanding": outstanding_value,
-            "limit": limit_value,
-        }
+    if all_section_lines is None:
+        all_section_lines = extract_all_sections(pdf_path, START_MARKER, END_MARKER)
 
     per_section_totals: List[Dict[str, Optional[Decimal]]] = []
     for section_lines in all_section_lines:
         section_text = "\n".join(section_lines)
         if section_text.strip():
-            per_section_totals.append(extract_from_text(section_text))
+            per_section_totals.append(parse_outstanding_limit_from_text(section_text))
 
     # Fallback when no detailed section is found.
     if not per_section_totals:
-        chunks: List[str] = []
-        with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                chunks.append(page.extract_text() or "")
-        full_text = "\n".join(chunks)
-        per_section_totals.append(extract_from_text(full_text))
+        per_section_totals.append(parse_outstanding_limit_from_text(read_pdf_text(pdf_path)))
 
     outstanding_sum = sum(
         (item["outstanding"] for item in per_section_totals if item["outstanding"] is not None),
@@ -437,17 +330,13 @@ def extract_detailed_credit_report(pdf_path: str) -> Dict[str, Any]:
     Handles multiple occurrences and processes each separately.
     """
     all_section_lines = extract_all_sections(pdf_path, START_MARKER, END_MARKER)
-    total_balances = extract_total_balances(pdf_path)
-    
+    total_balances = extract_total_balances(pdf_path, all_section_lines)
+
     sections_data = []
-    
-    
+
     for section_idx, section_lines in enumerate(all_section_lines, start=1):
-      
         records = split_into_records(section_lines)
         analysis = analyze_account_lines(records)
-        print("Hello: ", analysis)
-             
         sections_data.append({
             "section_number": section_idx,
             "record_count": len(records),

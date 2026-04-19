@@ -1,31 +1,7 @@
 import re
-import json
-from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
-import pdfplumber
-
-from pdf_utils import pick_pdf_file, parse_money, RE_MONEY
-
-
-def _norm(s: str) -> str:
-    """Normalize whitespace to make regex easier."""
-    s = s.replace("\u00a0", " ")  # non-breaking space
-    s = re.sub(r"[ \t]+", " ", s)
-    s = re.sub(r"\n+", "\n", s)
-    return s.strip()
-
-
-def read_pdf_text(pdf_path: str) -> str:
-    """Read all pages from a PDF into one normalized text string."""
-    if not Path(pdf_path).exists():
-        raise FileNotFoundError(f"PDF not found: {pdf_path}")
-
-    chunks = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            chunks.append(page.extract_text() or "")
-    return _norm("\n".join(chunks))
+from pdf_utils import pick_pdf_file, parse_money, read_pdf_text, RE_MONEY
 
 
 def extract_first(pattern: str, text: str, flags=re.IGNORECASE | re.DOTALL) -> Optional[str]:
@@ -84,15 +60,6 @@ def extract_word_after_label(label: str, text: str) -> Optional[str]:
     if not v:
         return None
     return v.split("\n")[0].strip()
-
-
-def extract_name_of_subject(text: str) -> Optional[str]:
-    """
-    Extract the Name Of Subject field.
-    Accepts any non-empty line after the label.
-    """
-    v = extract_first(r"Name Of Subject\s*[:\-]?\s*([^\n]+)", text)
-    return v.strip() if v else None
 
 
 def extract_name_of_subject_all(text: str) -> list[Optional[str]]:
@@ -226,51 +193,18 @@ def extract_legal_suits_all(text: str) -> list[Optional[int]]:
     return values
 
 
-def extract_legal_suits_total(text: str) -> Optional[int]:
-    """
-    Prefer summary 'Legal Suits 0' if present.
-    Fallback: litigation section 'LEGAL SUITS ... Total: 0'
-    """
-    v = extract_int_after_label("Legal Suits", text)
-    if v is not None:
-        return v
-
-    v2 = extract_first(r"LEGAL\s+SUITS.*?Total\s*:\s*([0-9]+)", text)
-    return int(v2) if v2 else None
-
-
-def extract_section_after_header(header: str, text: str) -> Optional[str]:
-    header_esc = re.escape(header)
-    pattern = rf"{header_esc}.*?(?=\n[A-Z][A-Z &/\-]{{5,}}\n|$)"
-    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-    return match.group(0) if match else None
-
-
-def extract_borrower_liabilities(text: str) -> tuple[Optional[float], Optional[float]]:
-    """Extract first borrower liabilities (Outstanding and Total Limit)."""
-    section = extract_section_after_header("SUMMARY OF POTENTIAL & CURRENT LIABILITIES", text)
-    if not section:
-        return None, None
-
-    lines = [line.strip() for line in section.splitlines() if line.strip()]
-    header_idx = next(
-        (idx for idx, line in enumerate(lines) if "Outstanding" in line and "Total Limit" in line),
-        None,
-    )
-    if header_idx is None:
-        search_lines = lines
-    else:
-        search_lines = lines[header_idx + 1 :]
-
+def _first_borrower_outstanding_limit(search_lines: List[str]) -> Optional[Tuple[Optional[float], Optional[float]]]:
+    """First Borrower row in search_lines: (outstanding, limit) from money tokens, or None."""
     for idx, line in enumerate(search_lines):
-        if re.search(r"\bBorrower\b", line, re.IGNORECASE):
-            combined = line
-            if idx + 1 < len(search_lines):
-                combined = f"{combined} {search_lines[idx + 1]}"
-            amounts = [m.group(0) for m in RE_MONEY.finditer(combined)]
-            if len(amounts) >= 2:
-                return parse_money(amounts[0]), parse_money(amounts[1])
-    return None, None
+        if not re.search(r"\bBorrower\b", line, re.IGNORECASE):
+            continue
+        combined = line
+        if idx + 1 < len(search_lines):
+            combined = f"{combined} {search_lines[idx + 1]}"
+        amounts = [m.group(0) for m in RE_MONEY.finditer(combined)]
+        if len(amounts) >= 2:
+            return (parse_money(amounts[0]), parse_money(amounts[1]))
+    return None
 
 
 def extract_borrower_liabilities_all(text: str) -> list[tuple[Optional[float], Optional[float]]]:
@@ -279,60 +213,37 @@ def extract_borrower_liabilities_all(text: str) -> list[tuple[Optional[float], O
     Returns list of tuples: [(outstanding_1, limit_1), (outstanding_2, limit_2), ...]
     Dynamic length based on how many are found.
     """
-    # Find all sections with "SUMMARY OF POTENTIAL & CURRENT LIABILITIES"
     section_pattern = r"SUMMARY OF POTENTIAL & CURRENT LIABILITIES.*?(?=\n[A-Z][A-Z &/\-]{5,}\n|$)"
     sections = re.findall(section_pattern, text, re.IGNORECASE | re.DOTALL)
-    
-    all_liabilities = []
-    
+
+    all_liabilities: list[tuple[Optional[float], Optional[float]]] = []
+
     if not sections:
-        # Fallback: try to find all "Borrower" entries in the entire text
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         header_positions = [
-            idx for idx, line in enumerate(lines) 
+            idx for idx, line in enumerate(lines)
             if "Outstanding" in line and "Total Limit" in line
         ]
-        
         for header_idx in header_positions:
-            search_lines = lines[header_idx + 1 : header_idx + 50]  # Look ahead up to 50 lines
-            
-            for idx, line in enumerate(search_lines):
-                if re.search(r"\bBorrower\b", line, re.IGNORECASE):
-                    combined = line
-                    if idx + 1 < len(search_lines):
-                        combined = f"{combined} {search_lines[idx + 1]}"
-                    amounts = [m.group(0) for m in RE_MONEY.finditer(combined)]
-                    if len(amounts) >= 2:
-                        all_liabilities.append((parse_money(amounts[0]), parse_money(amounts[1])))
-                        break  # Only take first "Borrower" per header
+            search_lines = lines[header_idx + 1 : header_idx + 50]
+            pair = _first_borrower_outstanding_limit(search_lines)
+            if pair is not None:
+                all_liabilities.append(pair)
     else:
-        # Process each section
         for section in sections:
             lines = [line.strip() for line in section.splitlines() if line.strip()]
             header_idx = next(
                 (idx for idx, line in enumerate(lines) if "Outstanding" in line and "Total Limit" in line),
                 None,
             )
-            
-            if header_idx is None:
-                search_lines = lines
-            else:
-                search_lines = lines[header_idx + 1 :]
-            
-            for idx, line in enumerate(search_lines):
-                if re.search(r"\bBorrower\b", line, re.IGNORECASE):
-                    combined = line
-                    if idx + 1 < len(search_lines):
-                        combined = f"{combined} {search_lines[idx + 1]}"
-                    amounts = [m.group(0) for m in RE_MONEY.finditer(combined)]
-                    if len(amounts) >= 2:
-                        all_liabilities.append((parse_money(amounts[0]), parse_money(amounts[1])))
-                        break  # Only take first "Borrower" per section
-    
-    # Ensure we have at least one element
+            search_lines = lines if header_idx is None else lines[header_idx + 1 :]
+            pair = _first_borrower_outstanding_limit(search_lines)
+            if pair is not None:
+                all_liabilities.append(pair)
+
     if not all_liabilities:
         all_liabilities = [(None, None)]
-    
+
     return all_liabilities
 
 
@@ -373,57 +284,6 @@ def extract_trade_credit_amount_due_all(text: str) -> list[Optional[float]]:
         all_amounts = [None]
     
     return all_amounts
-
-
-def extract_text_between_headers(start_header: str, end_header: str, text: str) -> Optional[str]:
-    start_esc = re.escape(start_header)
-    end_esc = re.escape(end_header)
-    pattern = rf"{start_esc}(.*?){end_esc}"
-    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-    return match.group(1) if match else None
-
-def extract_litigation_defendant_flags(text: str) -> dict[str, str]:
-    section = extract_section_after_header("SECTION 3: LITIGATION INFORMATION", text)
-    labels = [
-        "CASE WITHDRAWN / SETTLED",
-        "OTHER KNOWN LEGAL SUITS WITH LIMITED DETAILS - SUBJECT AS DEFENDANT",
-        "LEGAL SUITS - SUBJECT AS DEFENDANT",
-    ]
-
-    def subsection_after_label(section_text: str, label: str) -> Optional[str]:
-        label_esc = re.escape(label)
-        other_labels = [re.escape(item) for item in labels if item != label]
-        if other_labels:
-            boundary = "|".join(other_labels)
-            pattern = rf"{label_esc}\s*(.*?)(?=({boundary})|$)"
-        else:
-            pattern = rf"{label_esc}\s*(.*)$"
-        match = re.search(pattern, section_text, re.IGNORECASE | re.DOTALL)
-        return match.group(1) if match else None
-
-    def has_defendant_name(block: Optional[str]) -> bool:
-        if not block:
-            return False
-        return re.search(r"\bDefendant Name\b", block, re.IGNORECASE) is not None
-
-    if not section:
-        return {
-            "Case_Withdrawn_Settled_Defendant_Name": "No",
-            "Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name": "No",
-            "Legal_Suits_Subject_As_Defendant_Defendant_Name": "No",
-        }
-
-    return {
-        "Case_Withdrawn_Settled_Defendant_Name": "Yes"
-        if has_defendant_name(subsection_after_label(section, labels[0]))
-        else "No",
-        "Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name": "Yes"
-        if has_defendant_name(subsection_after_label(section, labels[1]))
-        else "No",
-        "Legal_Suits_Subject_As_Defendant_Defendant_Name": "Yes"
-        if has_defendant_name(subsection_after_label(section, labels[2]))
-        else "No",
-    }
 
 
 def extract_litigation_defendant_flags_all(text: str) -> list[dict[str, str]]:

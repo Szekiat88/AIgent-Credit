@@ -2,8 +2,9 @@
 
 import re
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog
-from typing import Optional, List
+from typing import Optional, List, Dict
 from decimal import Decimal, InvalidOperation
 
 import pdfplumber
@@ -14,6 +15,29 @@ import pdfplumber
 # =============================
 RE_DATE = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 RE_MONEY = re.compile(r"\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b")
+
+
+# =============================
+# PDF TEXT READING
+# =============================
+def normalize_pdf_text(s: str) -> str:
+    """Normalize whitespace on extracted PDF text for stable regex and line splitting."""
+    s = s.replace("\u00a0", " ")
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\n+", "\n", s)
+    return s.strip()
+
+
+def read_pdf_text(pdf_path: str) -> str:
+    """Read all pages from a PDF into one normalized text string."""
+    if not Path(pdf_path).exists():
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+
+    chunks: List[str] = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            chunks.append(page.extract_text() or "")
+    return normalize_pdf_text("\n".join(chunks))
 
 
 # =============================
@@ -65,45 +89,61 @@ def parse_decimal(value: str) -> Optional[Decimal]:
         return None
 
 
+def parse_outstanding_limit_from_text(text: str) -> Dict[str, Optional[Decimal]]:
+    """
+    Parse OUTSTANDING and LIMIT amounts from one flattened line or a block of text.
+    Used for CCRIS banking account lines and for section-level TOTAL OUTSTANDING / LIMIT blocks.
+    """
+    number_capture = r"([0-9][0-9,\s]*(?:\.\d{2})?)"
+    outstanding_patterns = [
+        re.compile(
+            rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+            re.IGNORECASE,
+        )
+    ]
+    limit_patterns = [
+        re.compile(
+            rf"LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+            re.IGNORECASE,
+        )
+    ]
+    paired_pattern = re.compile(
+        rf"OUTSTANDING\s*[:\-]?\s*(?:RM\s*)?{number_capture}"
+        rf"\s*,?\s*LIMIT(?:\s*\(RM\))?\s*[:\-]?\s*(?:RM\s*)?{number_capture}",
+        re.IGNORECASE,
+    )
+
+    flattened = re.sub(r"\s+", " ", text)
+    outstanding_value: Optional[Decimal] = None
+    limit_value: Optional[Decimal] = None
+
+    paired_match = paired_pattern.search(flattened)
+    if paired_match:
+        outstanding_value = parse_decimal(paired_match.group(1).replace(" ", ""))
+        limit_value = parse_decimal(paired_match.group(2).replace(" ", ""))
+
+    if outstanding_value is None:
+        for pattern in outstanding_patterns:
+            match = pattern.search(flattened)
+            if match:
+                outstanding_value = parse_decimal(match.group(1).replace(" ", ""))
+                if outstanding_value is not None:
+                    break
+
+    if limit_value is None:
+        for pattern in limit_patterns:
+            match = pattern.search(flattened)
+            if match:
+                limit_value = parse_decimal(match.group(1).replace(" ", ""))
+                if limit_value is not None:
+                    break
+
+    return {"outstanding": outstanding_value, "limit": limit_value}
+
+
 # =============================
 # PDF SECTION EXTRACTION
 # =============================
-def extract_section_lines(pdf_path: str, start_marker: str, end_marker: str) -> List[str]:
-    """
-    Extract lines between two markers in a PDF.
-    
-    Args:
-        pdf_path: Path to the PDF file
-        start_marker: Text marker that indicates start of section
-        end_marker: Text marker that indicates end of section
-        
-    Returns:
-        List of lines between the markers
-    """
-    lines_between: List[str] = []
-    in_section = False
-
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            for line in text.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-
-                if not in_section and start_marker.lower() in line.lower():
-                    in_section = True
-                    continue
-
-                if in_section and end_marker.lower() in line.lower():
-                    return lines_between
-
-                if in_section:
-                    lines_between.append(line)
-
-    return lines_between
-
-
 def extract_all_sections(pdf_path: str = None, start_marker: str = None, end_marker: str = None, text_lines: List[str] = None) -> List[List[str]]:
     """
     Extract ALL sections between two markers in a PDF or from text lines.
@@ -125,11 +165,7 @@ def extract_all_sections(pdf_path: str = None, start_marker: str = None, end_mar
     if text_lines is None:
         if pdf_path is None:
             raise ValueError("Either pdf_path or text_lines must be provided")
-        text_lines = []
-        with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text() or ""
-                text_lines.extend(text.splitlines())
+        text_lines = read_pdf_text(pdf_path).splitlines()
 
     # Process lines
     for line in text_lines:

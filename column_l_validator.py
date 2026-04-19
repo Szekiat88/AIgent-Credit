@@ -11,6 +11,8 @@ import openpyxl
 from openpyxl.styles import Font
 from openpyxl.worksheet.worksheet import Worksheet
 
+from text_normalize import normalize_compare_text
+
 SHEET_NAME = "Knock-Out"
 CRITERIA_COL = 12  # Column L
 LABEL_COL = 4      # Column D
@@ -19,7 +21,7 @@ RED_BOLD_FONT = Font(bold=True, color="00FF0000")
 
 
 def _norm(value: object) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip().lower()
+    return normalize_compare_text(value)
 
 
 def _num(value: object) -> Optional[float]:

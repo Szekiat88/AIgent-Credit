@@ -1,9 +1,7 @@
 import re
 from typing import List, Dict, Any, Optional, Tuple
 
-import pdfplumber
-
-from pdf_utils import pick_pdf_file, extract_section_lines, RE_DATE
+from pdf_utils import pick_pdf_file, extract_all_sections, RE_DATE
 
 RE_TOTAL_LINE = re.compile(r"^\s*TOTAL\s+[\d,]+\.\d{2}\s+TOTAL\s+[\d,]+\.\d{2}\s*$", re.IGNORECASE)
 RE_TOTAL_VALUES = re.compile(r"TOTAL\s+([\d,]+\.\d{2})\s+TOTAL\s+([\d,]+\.\d{2})", re.IGNORECASE)
@@ -259,6 +257,9 @@ def parse_outstanding_with_stats(lines: List[str]) -> Dict[str, Any]:
     }
 
 def extract_non_bank_lender_credit_information(pdf_path: str) -> Dict[str, Any]:
+    # Same marker-based extraction as banking CCRIS; use first NLCI block only.
+    all_sections = extract_all_sections(pdf_path, START_MARKER, END_MARKER)
+    section_lines = all_sections[0] if all_sections else []
     result: Dict[str, Any] = {
         "source_pdf": pdf_path,
         "section": {"start_marker": START_MARKER, "end_marker": END_MARKER},

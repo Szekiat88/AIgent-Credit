@@ -7,17 +7,17 @@ import json
 import os
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
 
 from merged_credit_report import merge_reports, resolve_pdf_path
-from pdf_utils import pick_excel_file
-import pdfplumber
 
 from column_l_validator import apply_column_l_highlighting, RED_BOLD_FONT
+from text_normalize import normalize_compare_text
 
 SHEET_NAME = "Knock-Out"
 LABEL_COL = 4  # Column D
@@ -27,37 +27,67 @@ SCORE_RANGE_EQUIVALENTS = [
     (621, 660, "B"), (581, 620, "C"), (541, 580, "C"),
     (501, 540, "D"), (461, 500, "E"), (421, 460, "F"), (0, 420, "F"),
 ]
-MULTI_COL_PATTERNS = [
-    "Scoring by CRA Agency (Issuer's Credit Agency Score)",
-    "Scoring by CRA Agency (Credit Score Equivalent)",
-    "Winding Up / Bankruptcy Proceedings Record",
-    "Credit Applications Approved for Last 12 months (per primary CRA report)",
-    "Credit Applications Pending (per primary CRA report)",
-    "Legal Action taken (from Banking) (per primary CRA report)",
-    "Existing No. of Facility (from Banking) (per primary CRA report)",
-    "Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)",
-    "Legal Case - Status (per primary CRA report)",
-    "Trade / Credit Reference (per primary CRA report)",
-    "Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)",
-    "Special Attention Account (per primary CRA report)",
-    "Summary of Total Liabilities (Outstanding) (per primary CRA report)",
-    "Summary of Total Liabilities (Total Limit) (per primary CRA report)",
-    "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)",
-    "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report)",
-    "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report)",
-    "CCRIS Loan Account - Conduct Count (per primary CRA report)",
-    "CCRIS Loan Account - Legal Status (per primary CRA report)",
-    "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)",
-    "Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report)",
-]
+
+# Row labels in column D (subject columns are issuer_data_col + 0, +2, +4, …).
+LBL_SCORE_RAW = "Scoring by CRA Agency (Issuer's Credit Agency Score)"
+LBL_SCORE_EQ = "Scoring by CRA Agency (Credit Score Equivalent)"
+LBL_OPS_YEARS = (
+    "Business has been in operations for at least THREE (3) years "
+    "(Including upgrade from Sole Proprietorship and Partnership under similar business activity)"
+)
+LBL_COMPANY_STATUS = "Company Status (Existing Only)"
+LBL_EXEMPT_PRIVATE = "Exempt Private Company"
+LBL_WINDING_UP = "Winding Up / Bankruptcy Proceedings Record"
+LBL_CREDIT_APPR = "Credit Applications Approved for Last 12 months (per primary CRA report)"
+LBL_CREDIT_PEND = "Credit Applications Pending (per primary CRA report)"
+LBL_LEGAL_ACTION = "Legal Action taken (from Banking) (per primary CRA report)"
+LBL_EXISTING_FAC = "Existing No. of Facility (from Banking) (per primary CRA report)"
+LBL_LEGAL_SUITS = "Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)"
+LBL_TRADE_CREDIT = "Trade / Credit Reference (per primary CRA report)"
+LBL_LEGAL_CASE_STATUS = "Legal Case - Status (per primary CRA report)"
+LBL_TOTAL_ENQ = (
+    "Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)"
+)
+LBL_SPECIAL_ATTN = "Special Attention Account (per primary CRA report)"
+LBL_OVERDRAFT = (
+    "Overdraft facility outstanding amount does not exceed the approved overdraft limit "
+    "as per CCRIS (based on the primary CRA report)"
+)
+LBL_BANKING_WITHIN = (
+    "Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit "
+    "(per primary CRA report)"
+)
+LBL_SUM_OUT = "Summary of Total Liabilities (Outstanding) (per primary CRA report)"
+LBL_SUM_LIM = "Summary of Total Liabilities (Total Limit) (per primary CRA report)"
+LBL_NONBANK_WITHIN = (
+    "Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the "
+    "Total Non-Bank Lender Limit (per primary CRA report)"
+)
+LBL_CCRIS_CONDUCT = "CCRIS Loan Account - Conduct Count (per primary CRA report)"
+LBL_CCRIS_LEGAL = "CCRIS Loan Account - Legal Status (per primary CRA report)"
+LBL_NLCI_CONDUCT = "Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report)"
+LBL_NLCI_LEGAL = "Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report)"
+LBL_TOTAL_LIMIT = "Total Limit"
+LBL_TOTAL_OUTSTANDING = "Total Outstanding Balance"
+
+
+@dataclass(frozen=True)
+class KnockoutCellPlacement:
+    """One Excel cell: row from label (column D), column = issuer_data_col + col_offset."""
+
+    label: str
+    col_offset: int
+    value: Any
+
+
+def _subject_col_offset(subject_index: int) -> int:
+    """1-based subject index → horizontal offset (0, 2, 4, …)."""
+    return (subject_index - 1) * 2
 
 
 def _norm(s: str) -> str:
-    """Normalize string for comparison."""
-    s = s or ""
-    s = s.replace("\u2019", "'").replace("\u2018", "'")
-    s = s.replace("\u201c", '"').replace("\u201d", '"')
-    return re.sub(r"\s+", " ", s.replace("\n", " ")).strip().lower()
+    """Normalize Knock-Out template label text for comparison."""
+    return normalize_compare_text(s, smart_typography=True)
 
 
 def _safe_int(value: Any) -> int:
@@ -68,8 +98,10 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
-def _format_with_commas(value: int | float) -> str:
+def _format_with_commas(value: Optional[int | float]) -> str:
     """Format numeric value with comma separators for thousands."""
+    if value is None:
+        return "N/A"
     if float(value).is_integer():
         return f"{int(value):,}"
     return f"{value:,.2f}".rstrip("0").rstrip(".")
@@ -99,12 +131,15 @@ def _format_number_or_na(value: Optional[float | int | str]) -> str:
         return "N/A"
     return formatted
 
-def _text_or_na(value: Any) -> str:
-    """Return trimmed text or N/A for missing/blank values."""
-    if value is None:
-        return "N/A"
-    text = str(value).strip()
-    return text if text else "N/A"
+
+def _format_mia_bucket_line(counts_dict: Dict[str, Any], plus_key: str) -> str:
+    """Format one MIA1..MIA4+ line (CCRIS digit buckets use '5_plus'; NLCI freq uses '4+')."""
+    return (
+        f"MIA1: {_format_with_commas(_safe_int(counts_dict.get('1', 0)))}, "
+        f"MIA2: {_format_with_commas(_safe_int(counts_dict.get('2', 0)))}, "
+        f"MIA3: {_format_with_commas(_safe_int(counts_dict.get('3', 0)))}, "
+        f"MIA4+: {_format_with_commas(_safe_int(counts_dict.get(plus_key, 0)))}"
+    )
 
 
 def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
@@ -119,24 +154,15 @@ def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
     if not any(isinstance(v, dict) for v in counts.values()):
         return None
 
-    def format_counts(counts_dict: Dict[str, Any], plus_key: str) -> str:
-        """Format counts as 'MIA1: X, MIA2: Y, ...'"""
-        return (
-            f"MIA1: {_format_with_commas(_safe_int(counts_dict.get('1', 0)))}, "
-            f"MIA2: {_format_with_commas(_safe_int(counts_dict.get('2', 0)))}, "
-            f"MIA3: {_format_with_commas(_safe_int(counts_dict.get('3', 0)))}, "
-            f"MIA4+: {_format_with_commas(_safe_int(counts_dict.get(plus_key, 0)))}"
-        )
-
     parts = []
     if isinstance(counts["next_six"], dict):
-        parts.append(f"past 6 months {format_counts(counts['next_six'], '5_plus')}")
+        parts.append(f"past 6 months {_format_mia_bucket_line(counts['next_six'], '5_plus')}")
     if isinstance(counts["last_6"], dict):
-        parts.append(f"past 6 months {format_counts(counts['last_6'], '4+')}")
+        parts.append(f"past 6 months {_format_mia_bucket_line(counts['last_6'], '4+')}")
     if isinstance(counts["next_first"], dict):
-        parts.append(f"current 1 month {format_counts(counts['next_first'], '5_plus')}")
+        parts.append(f"current 1 month {_format_mia_bucket_line(counts['next_first'], '5_plus')}")
     if isinstance(counts["last_1"], dict):
-        parts.append(f"current 1 month {format_counts(counts['last_1'], '4+')}")
+        parts.append(f"current 1 month {_format_mia_bucket_line(counts['last_1'], '4+')}")
    
 
     return " and /or ".join(parts) if parts else None
@@ -274,23 +300,13 @@ def _format_non_bank_mia(stats: Dict[str, Any]) -> Optional[str]:
         and (not isinstance(last_1, dict) or not has_any_mia(last_1, "4+"))
     ):
         return None
-    
-    def format_counts(counts_dict: Dict[str, Any], plus_key: str) -> str:
-        """Format counts as 'MIA1: X, MIA2: Y, ...'"""
-        return (
-            f"MIA1: {_format_with_commas(_safe_int(counts_dict.get('1', 0)))}, "
-            f"MIA2: {_format_with_commas(_safe_int(counts_dict.get('2', 0)))}, "
-            f"MIA3: {_format_with_commas(_safe_int(counts_dict.get('3', 0)))}, "
-            f"MIA4+: {_format_with_commas(_safe_int(counts_dict.get(plus_key, 0)))}"
-        )
-    
+
     parts = []
     if isinstance(last_6, dict):
-        parts.append(f"past 6 months {format_counts(last_6, '4+')}")
+        parts.append(f"past 6 months {_format_mia_bucket_line(last_6, '4+')}")
     if isinstance(last_1, dict):
-        parts.append(f"current 1 month {format_counts(last_1, '4+')}")
+        parts.append(f"current 1 month {_format_mia_bucket_line(last_1, '4+')}")
 
-    
     return " and /or ".join(parts) if parts else None
 
 
@@ -299,10 +315,6 @@ def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
     totals = non_bank.get("totals", {}) if isinstance(non_bank.get("totals"), dict) else {}
     stats = non_bank.get("stats_totals", {}) if isinstance(non_bank.get("stats_totals"), dict) else {}
     records = non_bank.get("records", []) if isinstance(non_bank.get("records"), list) else []
-    extraction_error = non_bank.get("error")
-
-    if extraction_error:
-        return totals, stats, "N/A", "N/A"
     
     # Format MIA counts for conduct count display
     mia_formatted = _format_non_bank_mia(stats)
@@ -324,26 +336,14 @@ def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
     
     # Legal status
     markers = sorted({record.get("legal_marker") for record in records if record.get("legal_marker")})
-    legal_status = ", ".join(markers) if markers else "N/A"
+    legal_status = ", ".join(markers) if markers else "No"
     
     return totals, stats, conduct_count, legal_status
 
 
 def _within_limit(outstanding, limit) -> str:
     """Check if outstanding is within limit."""
-    if outstanding is None or limit is None:
-        return "N/A"
-    return "YES" if outstanding <= limit else "NO"
-
-def _format_limit_comparison_status(outstanding, limit) -> str:
-    """Format a limit comparison status with values."""
-    if outstanding is None or limit is None:
-        return "N/A"
-    return (
-        f"{_within_limit(outstanding, limit)}, "
-        f"outstanding: {_format_with_commas(outstanding)}, "
-        f"limit: {_format_with_commas(limit)}"
-    )
+    return "YES" if outstanding is not None and limit is not None and outstanding <= limit else "NO"
 
 
 def _extract_ccris_legal_status(sections: List[Dict[str, Any]]) -> str:
@@ -372,84 +372,140 @@ def _should_highlight_ccris_legal_status(label: str, value: Any) -> bool:
     return str(value).strip().upper() != "N/A"
 
 
-def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
-    """Build knockout matrix data from merged report."""
+def _place(out: List[KnockoutCellPlacement], label: str, col_offset: int, value: Any) -> None:
+    out.append(KnockoutCellPlacement(label=label, col_offset=col_offset, value=value))
+
+
+def _place_per_subject(
+    out: List[KnockoutCellPlacement],
+    label: str,
+    num_subjects: int,
+    value_fn: Callable[[int], Any],
+) -> None:
+    for i in range(1, num_subjects + 1):
+        _place(out, label, _subject_col_offset(i), value_fn(i))
+
+
+def build_knockout_placements(merged: Dict[str, Any]) -> List[KnockoutCellPlacement]:
+    """Map merged extract JSON to explicit (row label, column offset, value) placements."""
     summary = merged.get("summary_report", {})
     detailed = merged.get("detailed_credit_report", {})
     non_bank = merged.get("non_bank_lender_credit_information", {})
-    
+
     totals = detailed.get("totals", {})
     total_limit = totals.get("total_limit") or summary.get("Borrower_Total_Limit_RM")
     total_outstanding = totals.get("total_outstanding_balance") or summary.get("Borrower_Outstanding_RM")
-    
-    non_bank_totals, non_bank_stats, non_bank_conduct, non_bank_legal = _get_non_bank_data(non_bank)
-    non_bank_conduct = _text_or_na(non_bank_conduct)
-    non_bank_legal = _text_or_na(non_bank_legal)
-    
-    # Detect number of subjects
+
+    non_bank_totals, _non_bank_stats, non_bank_conduct, non_bank_legal = _get_non_bank_data(non_bank)
+
     num_subjects = 1
     while summary.get(f"Name_Of_Subject_{num_subjects + 1}"):
         num_subjects += 1
-    
-    # Helper functions
-    def get_subject_field(field_name: str, subject_idx: int):
-        return summary.get(field_name if subject_idx == 1 else f"{field_name}_{subject_idx}")
-    
-    def add_multi_subject_data(label: str, field_name: str, format_func=None):
-        for i in range(1, num_subjects + 1):
-            suffix = f" {i}" if i > 1 else ""
-            value = get_subject_field(field_name, i)
-            data[f"{label}{suffix}"] = format_func(value) if format_func else value
-    
-    # Build data
-    data = {}
-    
-    # Credit scores
-    for i in range(1, num_subjects + 1):
-        suffix = f" {i}" if i > 1 else ""
-        score = get_subject_field("i_SCORE", i)
-        data[f"Scoring by CRA Agency (Issuer's Credit Agency Score){suffix}"] = _format_number(score)
-        data[f"Scoring by CRA Agency (Credit Score Equivalent){suffix}"] = score_to_equivalent(score)
-    
-    # Single-column fields
-    data["Business has been in operations for at least THREE (3) years (Including upgrade from Sole Proprietorship and Partnership under similar business activity)"] = _format_number(summary.get("Incorporation_Year"))
-    data["Company Status (Existing Only)"] = summary.get("Status")
-    data["Exempt Private Company"] = summary.get("Private_Exempt_Company")
-    
-    # Multi-subject fields
-    add_multi_subject_data("Winding Up / Bankruptcy Proceedings Record", "Winding_Up_Record", _format_number)
-    add_multi_subject_data("Credit Applications Approved for Last 12 months (per primary CRA report)", "Credit_Applications_Approved_Last_12_months", _format_number)
-    add_multi_subject_data("Credit Applications Pending (per primary CRA report)", "Credit_Applications_Pending", _format_number)
-    add_multi_subject_data("Legal Action taken (from Banking) (per primary CRA report)", "Legal_Action_taken_from_Banking", _format_number)
-    add_multi_subject_data("Existing No. of Facility (from Banking) (per primary CRA report)", "Existing_No_of_Facility_from_Banking", _format_number)
-    add_multi_subject_data("Legal Suits (per primary CRA report) (either as Plaintiff or Defendant)", "Legal_Suits", _format_number)
-    add_multi_subject_data("Trade / Credit Reference (per primary CRA report)", "Trade_Credit_Reference", _format_number_or_na)
 
-    
-    # Legal Case Status
-    for i in range(1, num_subjects + 1):
-        suffix = f" {i}" if i > 1 else ""
-        data[f"Legal Case - Status (per primary CRA report){suffix}"] = ", ".join([
+    def get_subject_field(field_name: str, subject_idx: int) -> Any:
+        return summary.get(field_name if subject_idx == 1 else f"{field_name}_{subject_idx}")
+
+    placements: List[KnockoutCellPlacement] = []
+
+    _place_per_subject(
+        placements,
+        LBL_SCORE_RAW,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("i_SCORE", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_SCORE_EQ,
+        num_subjects,
+        lambda i: score_to_equivalent(get_subject_field("i_SCORE", i)),
+    )
+
+    _place(placements, LBL_OPS_YEARS, 0, _format_number(summary.get("Incorporation_Year")))
+    _place(placements, LBL_COMPANY_STATUS, 0, summary.get("Status"))
+    _place(placements, LBL_EXEMPT_PRIVATE, 0, summary.get("Private_Exempt_Company"))
+
+    _place_per_subject(
+        placements,
+        LBL_WINDING_UP,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("Winding_Up_Record", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_CREDIT_APPR,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("Credit_Applications_Approved_Last_12_months", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_CREDIT_PEND,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("Credit_Applications_Pending", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_LEGAL_ACTION,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("Legal_Action_taken_from_Banking", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_EXISTING_FAC,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("Existing_No_of_Facility_from_Banking", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_LEGAL_SUITS,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("Legal_Suits", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_TRADE_CREDIT,
+        num_subjects,
+        lambda i: _format_number_or_na(get_subject_field("Trade_Credit_Reference", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_LEGAL_CASE_STATUS,
+        num_subjects,
+        lambda i: ", ".join([
             str(get_subject_field("Legal_Suits_Subject_As_Defendant_Defendant_Name", i) or "No"),
             str(get_subject_field("Other_Known_Legal_Suits_Subject_As_Defendant_Defendant_Name", i) or "No"),
-            str(get_subject_field("Case_Withdrawn_Settled_Defendant_Name", i) or "No")
-        ])
-    
-    # Note: "Trade / Credit Reference" is handled separately with section-based Amount Due data
-    # Do not add subject-based data here to avoid conflicts with section data insertion
-    add_multi_subject_data("Total Enquiries for Last 12 months (per primary CRA report) (Financial Related Search Count)", "Total_Enquiries_Last_12_months", _format_number)
-    add_multi_subject_data("Special Attention Account (per primary CRA report)", "Special_Attention_Account", _format_number)
+            str(get_subject_field("Case_Withdrawn_Settled_Defendant_Name", i) or "No"),
+        ]),
+    )
+    _place_per_subject(
+        placements,
+        LBL_TOTAL_ENQ,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("Total_Enquiries_Last_12_months", i)),
+    )
+    _place_per_subject(
+        placements,
+        LBL_SPECIAL_ATTN,
+        num_subjects,
+        lambda i: _format_number(get_subject_field("Special_Attention_Account", i)),
+    )
 
-    # Company-level data
     sections = detailed.get("sections", [])
     if not sections:
         sections = [{"account_line_analysis": detailed.get("account_line_analysis", {})}]
-    
-    overdraft_compliance = _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
-    fallback_banking_status = _format_limit_comparison_status(total_outstanding, total_limit)
+
+    merged_overdraft = (
+        _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
+    )
+    fallback_banking_status = (
+        f"{_within_limit(total_outstanding, total_limit)}, "
+        f"outstanding: {_format_with_commas(total_outstanding)}, "
+        f"limit: {_format_with_commas(total_limit)}"
+    )
     banking_status_by_section: List[str] = []
     banking_outstanding_by_section: List[Optional[float]] = []
     banking_limit_by_section: List[Optional[float]] = []
+    per_section_overdraft: List[str] = []
+
     for section in sections:
         analysis = section.get("account_line_analysis", {})
         section_status, section_outstanding, section_limit = _compute_banking_facility_status(analysis)
@@ -462,6 +518,8 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         banking_limit_by_section.append(
             section_limit if section_limit is not None else total_limit
         )
+        od = _compute_overdraft_compliance(analysis)
+        per_section_overdraft.append(od if od else "N/A")
 
     if not banking_status_by_section:
         banking_status_by_section = [fallback_banking_status]
@@ -469,43 +527,55 @@ def build_knockout_data(merged: Dict[str, Any]) -> Dict[str, Any]:
         banking_outstanding_by_section = [total_outstanding]
     if not banking_limit_by_section:
         banking_limit_by_section = [total_limit]
-    non_bank_within_primary = _format_limit_comparison_status(
-        non_bank_totals.get("total_outstanding"),
-        non_bank_totals.get("total_limit"),
-    )
+    if not per_section_overdraft:
+        per_section_overdraft = [merged_overdraft]
+
+    non_bank_within = _within_limit(non_bank_totals.get("total_outstanding"), non_bank_totals.get("total_limit"))
     ccris_legal_status = _extract_ccris_legal_status(sections)
-    
+
     for i in range(1, num_subjects + 1):
-        suffix = f" {i}" if i > 1 else ""
+        col = _subject_col_offset(i)
+        sec_i = i - 1
         banking_status = (
-            banking_status_by_section[i - 1]
-            if i - 1 < len(banking_status_by_section)
+            banking_status_by_section[sec_i]
+            if sec_i < len(banking_status_by_section)
             else fallback_banking_status
         )
         section_outstanding = (
-            banking_outstanding_by_section[i - 1]
-            if i - 1 < len(banking_outstanding_by_section)
+            banking_outstanding_by_section[sec_i]
+            if sec_i < len(banking_outstanding_by_section)
             else total_outstanding
         )
         section_limit = (
-            banking_limit_by_section[i - 1]
-            if i - 1 < len(banking_limit_by_section)
+            banking_limit_by_section[sec_i]
+            if sec_i < len(banking_limit_by_section)
             else total_limit
         )
-        non_bank_within = non_bank_within_primary if i == 1 else "N/A"
-        data[f"Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report){suffix}"] = overdraft_compliance
-        data[f"Issuer's Total Banking Outstanding Facilities does not exceed the Total Banking Limit (per primary CRA report){suffix}"] = banking_status
-        data[f"Summary of Total Liabilities (Outstanding) (per primary CRA report){suffix}"] = _format_number(section_outstanding)
-        data[f"Summary of Total Liabilities (Total Limit) (per primary CRA report){suffix}"] = _format_number(section_limit)
-        data[f"Issuer's Total Non- Bank Lender Outstanding Facilities does not exceed the Total Non-Bank Lender Limit (per primary CRA report){suffix}"] = non_bank_within
-        data[f"CCRIS Loan Account - Legal Status (per primary CRA report){suffix}"] = ccris_legal_status
-        data[f"Non-Bank Lender Credit Information (NLCI)- Conduct Count (per primary CRA report){suffix}"] = non_bank_conduct
-        data[f"Non-Bank Lender Credit Information (NLCI) - Legal Status (per primary CRA report){suffix}"] = non_bank_legal
-    
-    data["Total Limit"] = _format_number(total_limit)
-    data["Total Outstanding Balance"] = _format_number(total_outstanding)
-    
-    return data
+        overdraft_val = (
+            per_section_overdraft[sec_i]
+            if sec_i < len(per_section_overdraft)
+            else merged_overdraft
+        )
+        conduct_raw = (
+            sections[sec_i].get("account_line_analysis", {}).get("digit_counts_totals")
+            if sec_i < len(sections)
+            else None
+        )
+
+        _place(placements, LBL_OVERDRAFT, col, overdraft_val)
+        _place(placements, LBL_BANKING_WITHIN, col, banking_status)
+        _place(placements, LBL_SUM_OUT, col, _format_number(section_outstanding))
+        _place(placements, LBL_SUM_LIM, col, _format_number(section_limit))
+        _place(placements, LBL_NONBANK_WITHIN, col, non_bank_within)
+        _place(placements, LBL_CCRIS_CONDUCT, col, conduct_raw)
+        _place(placements, LBL_CCRIS_LEGAL, col, ccris_legal_status)
+        _place(placements, LBL_NLCI_CONDUCT, col, non_bank_conduct)
+        _place(placements, LBL_NLCI_LEGAL, col, non_bank_legal)
+
+    _place(placements, LBL_TOTAL_LIMIT, 0, _format_number(total_limit))
+    _place(placements, LBL_TOTAL_OUTSTANDING, 0, _format_number(total_outstanding))
+
+    return placements
 
 
 def find_issuer_data_column(ws: Worksheet) -> int:
@@ -555,37 +625,14 @@ def set_cra_report_dates(ws: Worksheet, cra_report_date: Optional[str]) -> None:
                 return
 
 
-def _insert_section_data(ws: Worksheet, label: str, label_index: Dict[str, int], 
-                         issuer_data_col: int, data_by_section: List[Any], 
-                         format_func=None) -> int:
-    """Insert section data into Excel columns."""
-    row = label_index.get(_norm(label))
-    if not row:
-        print(f"⚠️ Could not find row for '{label}'")
-        return 0
-    
-    written = 0
-    for section_idx, data in enumerate(data_by_section):
-        col_offset = section_idx * 2
-        target_col = issuer_data_col + col_offset
-        value = format_func(data) if format_func else data
-        ws.cell(row, target_col).value = value
-        written += 1
-    
-    return written
-
-
 def fill_knockout_matrix(
     file_path: str,
     issuer_name: str,
-    data_by_label: Dict[str, Any],
+    placements: Sequence[KnockoutCellPlacement],
     cra_report_date: Optional[str] = None,
     all_subject_names: Optional[list[str]] = None,
-    ccris_conduct_counts_by_section: Optional[list[Dict[str, Any]]] = None,
-    overdraft_by_section: Optional[list[str]] = None,
-    trade_amounts_by_section: Optional[list[list[float]]] = None,
 ) -> str:
-    """Fill the knockout matrix Excel template with data."""
+    """Fill the knockout matrix Excel template using explicit cell placements."""
     wb = openpyxl.load_workbook(file_path)
     if SHEET_NAME not in wb.sheetnames:
         raise ValueError(f"Sheet '{SHEET_NAME}' not found. Found: {wb.sheetnames}")
@@ -633,52 +680,26 @@ def fill_knockout_matrix(
         )
     
     label_index = build_label_row_index(ws, LABEL_COL)
-    
-    # Write main data
-    missing = []
-    written = 0
-    
-    for label, value in data_by_label.items():
-        normalized_label = _norm(label)
-        row = label_index.get(normalized_label)
-        target_col = issuer_data_col
-        
-        # Check for multi-column fields
-        if not row:
-            for pattern in MULTI_COL_PATTERNS:
-                for i in range(2, 20):
-                    if normalized_label == _norm(pattern + f" {i}"):
-                        row = label_index.get(_norm(pattern))
-                        target_col = issuer_data_col + (i - 1) * 2
-                        break
-                if row:
-                    break
-        
-        if not row:
-            missing.append(label)
-            continue
 
-        formatted_value = _format_cell_value(value)
+    missing: List[str] = []
+    written = 0
+
+    for p in placements:
+        row = label_index.get(_norm(p.label))
+        if not row:
+            missing.append(p.label)
+            continue
+        target_col = issuer_data_col + p.col_offset
+        if target_col > ws.max_column:
+            print(
+                f"⚠️ Skip '{p.label}' at col {target_col}: exceeds max_column {ws.max_column}"
+            )
+            continue
+        formatted_value = _format_cell_value(p.value)
         ws.cell(row, target_col).value = formatted_value
-        if _should_highlight_ccris_legal_status(label, formatted_value):
+        if _should_highlight_ccris_legal_status(p.label, formatted_value):
             ws.cell(row, target_col).font = RED_BOLD_FONT
         written += 1
-
-    # Insert CCRIS Conduct Count
-    if ccris_conduct_counts_by_section:
-        written += _insert_section_data(
-            ws, "CCRIS Loan Account - Conduct Count (per primary CRA report)",
-            label_index, issuer_data_col, ccris_conduct_counts_by_section,
-            _format_cell_value
-        )
-
-    # Insert Overdraft compliance by section in sequence.
-    if overdraft_by_section:
-        written += _insert_section_data(
-            ws, "Overdraft facility outstanding amount does not exceed the approved overdraft limit as per CCRIS (based on the primary CRA report)",
-            label_index, issuer_data_col, overdraft_by_section,
-            _format_cell_value
-        )
 
     # Apply Column L coloring immediately after insertion, only for columns inserted this run.
     cols_to_color = inserted_subject_cols or subject_cols
@@ -691,45 +712,10 @@ def fill_knockout_matrix(
 
     if missing:
         print("⚠️ Missing labels:")
-        for m in missing:
+        for m in dict.fromkeys(missing):
             print(f"  - {m}")
 
     return output_path
-
-
-def _get_pdf_path(args, merged: Dict[str, Any]) -> Optional[str]:
-    """Get PDF path from arguments or merged data."""
-    if args.pdf:
-        return args.pdf
-    if args.merged_json:
-        return merged.get("detailed_credit_report", {}).get("source_pdf") or merged.get("pdf_file")
-    return resolve_pdf_path(args.pdf)
-
-
-def _extract_sections_data(merged: Dict[str, Any]):
-    """Extract section data from merged report."""
-    detailed = merged.get("detailed_credit_report", {})
-    sections = detailed.get("sections", [])
-    return [
-        section.get("account_line_analysis", {}).get("digit_counts_totals", {})
-        for section in sections
-        if section.get("account_line_analysis", {}).get("digit_counts_totals")
-    ]
-
-
-def _extract_overdraft_by_section(merged: Dict[str, Any]) -> List[str]:
-    """Extract overdraft compliance text by section, preserving section order."""
-    detailed = merged.get("detailed_credit_report", {})
-    sections = detailed.get("sections", [])
-    if not sections:
-        return []
-
-    values: List[str] = []
-    for section in sections:
-        analysis = section.get("account_line_analysis", {})
-        compliance = _compute_overdraft_compliance(analysis)
-        values.append(compliance if compliance else "N/A")
-    return values
 
 
 def _find_excel_template(excel_name: str = DEFAULT_EXCEL) -> Optional[str]:
@@ -805,7 +791,6 @@ def main() -> None:
                 raise SystemExit(1)
             with open(args.merged_json, "r", encoding="utf-8") as f:
                 merged = json.load(f)
-            pdf_path = merged.get("pdf_file") or merged.get("detailed_credit_report", {}).get("source_pdf")
             print("✅ Merged report loaded")
         else:
             # Get PDF path (opens picker if not provided)
@@ -835,41 +820,16 @@ def main() -> None:
         if issuer_name and issuer_name not in all_subject_names:
             all_subject_names.insert(0, issuer_name)
         
-        # Build data
-        data = build_knockout_data(merged)
-        ccris_sections = _extract_sections_data(merged)
-        overdraft_by_section = _extract_overdraft_by_section(merged)
-        
-        # Extract trade amounts (extract PDF text once to avoid memory issues)
-        # Get PDF path if not already set
-        if not pdf_path:
-            pdf_path = _get_pdf_path(args, merged)
-        
-        if pdf_path and os.path.exists(pdf_path):
-            # Read the PDF once; share the text for all subsequent extractions.
-            pdf_text_lines: List[str] = []
-            try:
-                print("📄 Reading PDF text...")
-                with pdfplumber.open(pdf_path) as pdf:
-                    for page in pdf.pages:
-                        pdf_text_lines.extend((page.extract_text() or "").splitlines())
-            except Exception as e:
-                print(f"⚠️ Could not read PDF: {e}")
+        placements = build_knockout_placements(merged)
 
-         
-        elif not pdf_path:
-            print("ℹ️  No PDF path available - skipping PDF extractions")
-        
         # Fill Excel
         print(f"\n📝 Filling Excel template: {os.path.basename(excel_file)}")
         output = fill_knockout_matrix(
             excel_file,
             issuer_name,
-            data,
+            placements,
             cra_report_date=summary.get("Last_Updated_By_Experian"),
             all_subject_names=all_subject_names or None,
-            ccris_conduct_counts_by_section=ccris_sections or None,
-            overdraft_by_section=overdraft_by_section or None,
         )
         print(f"\n✅ Success! File saved: {os.path.basename(output)}")
         print(f"📁 Location: {os.path.dirname(os.path.abspath(output))}")
