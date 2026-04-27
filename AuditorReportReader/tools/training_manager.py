@@ -31,8 +31,10 @@ from pathlib import Path
 from typing import Optional
 
 # Ensure AuditorReportReader modules are importable
-_HERE = Path(__file__).parent.resolve()
-sys.path.insert(0, str(_HERE))
+_HERE = Path(__file__).parent.resolve()   # tools/
+_ROOT = _HERE.parent                       # AuditorReportReader/
+sys.path.insert(0, str(_HERE))             # diff_checker (tools/ sibling)
+sys.path.insert(0, str(_ROOT))             # core pipeline modules
 
 import diff_checker
 
@@ -40,14 +42,14 @@ import diff_checker
 # directory layout
 # ---------------------------------------------------------------------------
 
-_TRAINING   = _HERE / "training"
+_TRAINING   = _ROOT / "training"
 _CASES      = _TRAINING / "cases"
 _RUNS       = _TRAINING / "runs"
 _INBOX      = _TRAINING / "inbox"
 _SCORES     = _TRAINING / "scores.json"
 _PATTERNS   = _TRAINING / "patterns.json"
 
-_TEMPLATE   = _HERE / "Financial Statements Template.xlsx"
+_TEMPLATE   = _ROOT / "Financial Statements Template.xlsx"
 
 _EXCEL_EXTS = (".xlsx", ".xlsm", ".xls")
 

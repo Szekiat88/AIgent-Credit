@@ -25,7 +25,7 @@ python auditor_report_reader.py --pdf "Greatocean 2024.pdf" --no-cache
 python auditor_report_reader.py --pdf "Greatocean 2024.pdf" --no-web
 
 # Run mock integration tests (no API key needed)
-python test_pipeline.py
+python tests/test_pipeline.py
 ```
 
 ## Architecture & Data Flow

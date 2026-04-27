@@ -7,6 +7,8 @@ Run with:  python test_pipeline.py
 
 import sys
 import os
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))  # AuditorReportReader/
 import json
 import tempfile
 import shutil

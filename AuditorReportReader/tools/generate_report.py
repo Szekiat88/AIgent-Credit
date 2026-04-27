@@ -23,13 +23,14 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-_HERE     = Path(__file__).parent.resolve()
-_TRAINING = _HERE / "training"
+_HERE     = Path(__file__).parent.resolve()   # tools/
+_ROOT     = _HERE.parent                       # AuditorReportReader/
+_TRAINING = _ROOT / "training"
 _CASES    = _TRAINING / "cases"
 _RUNS     = _TRAINING / "runs"
 _SCORES   = _TRAINING / "scores.json"
 _PATTERNS = _TRAINING / "patterns.json"
-_DOCS     = _HERE / "docs"
+_DOCS     = _ROOT / "docs"
 
 _ERROR_COLORS = {
     "MATCH":        "#22c55e",
