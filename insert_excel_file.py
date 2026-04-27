@@ -18,6 +18,7 @@ from merged_credit_report import merge_reports, resolve_pdf_path
 
 from column_l_validator import apply_column_l_highlighting, RED_BOLD_FONT
 from text_normalize import normalize_compare_text
+from credit_analyst import assess, Assessment
 
 SHEET_NAME = "Knock-Out"
 LABEL_COL = 4  # Column D
@@ -98,6 +99,13 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _format_ol_status(status: str, outstanding: Optional[float], limit: Optional[float]) -> str:
+    return (
+        f"{status}, outstanding: {_format_with_commas(outstanding)}, "
+        f"limit: {_format_with_commas(limit)}"
+    )
+
+
 def _format_with_commas(value: Optional[int | float]) -> str:
     """Format numeric value with comma separators for thousands."""
     if value is None:
@@ -132,6 +140,16 @@ def _format_number_or_na(value: Optional[float | int | str]) -> str:
     return formatted
 
 
+def _get_freq(d: Dict[str, Any], key: str) -> Optional[Dict[str, Any]]:
+    v = d.get(key)
+    return v.get("freq") if isinstance(v, dict) else None
+
+
+def _safe_get(d: Dict[str, Any], key: str, default: Any) -> Any:
+    v = d.get(key)
+    return v if isinstance(v, type(default)) else default
+
+
 def _format_mia_bucket_line(counts_dict: Dict[str, Any], plus_key: str) -> str:
     """Format one MIA1..MIA4+ line (CCRIS digit buckets use '5_plus'; NLCI freq uses '4+')."""
     return (
@@ -147,8 +165,8 @@ def _format_mia_counts(value: Dict[str, Any]) -> Optional[str]:
     counts = {
         "next_six": value.get("next_six_numbers_digit_counts_0_1_2_3_5_plus"),
         "next_first": value.get("next_first_numbers_digit_counts_0_1_2_3_5_plus"),
-        "last_1": value.get("last_1_month", {}).get("freq") if isinstance(value.get("last_1_month"), dict) else None,
-        "last_6": value.get("last_6_months", {}).get("freq") if isinstance(value.get("last_6_months"), dict) else None,
+        "last_1": _get_freq(value, "last_1_month"),
+        "last_6": _get_freq(value, "last_6_months"),
     }
     
     if not any(isinstance(v, dict) for v in counts.values()):
@@ -207,10 +225,7 @@ def _compute_overdraft_compliance(analysis: Dict[str, Any]) -> str:
             all_within_limit = False
 
     status = "YES" if all_within_limit else "NO"
-    return (
-        f"{status}, outstanding: {_format_with_commas(total_outstanding)}, "
-        f"limit: {_format_with_commas(total_limit)}"
-    )
+    return _format_ol_status(status, total_outstanding, total_limit)
 
 
 def _merge_overdraft_comparisons(sections: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -257,10 +272,7 @@ def _compute_banking_facility_status(analysis: Dict[str, Any]) -> tuple[str, Opt
         outstanding_value = float(outstanding)
         limit_value = float(limit)
         status = "YES" if outstanding_value <= limit_value else "NO"
-        entries.append(
-            f"{status}, outstanding: {_format_with_commas(outstanding_value)}, "
-            f"limit: {_format_with_commas(limit_value)}"
-        )
+        entries.append(_format_ol_status(status, outstanding_value, limit_value))
         if section_outstanding is None and section_limit is None:
             section_outstanding = outstanding_value
             section_limit = limit_value
@@ -285,8 +297,8 @@ def _format_non_bank_mia(stats: Dict[str, Any]) -> Optional[str]:
     if not isinstance(stats, dict):
         return None
     
-    last_1 = stats.get("last_1_month", {}).get("freq") if isinstance(stats.get("last_1_month"), dict) else None
-    last_6 = stats.get("last_6_months", {}).get("freq") if isinstance(stats.get("last_6_months"), dict) else None
+    last_1 = _get_freq(stats, "last_1_month")
+    last_6 = _get_freq(stats, "last_6_months")
     
     if not isinstance(last_1, dict) and not isinstance(last_6, dict):
         return None
@@ -312,9 +324,9 @@ def _format_non_bank_mia(stats: Dict[str, Any]) -> Optional[str]:
 
 def _get_non_bank_data(non_bank: Dict[str, Any]) -> tuple:
     """Extract non-bank lender data."""
-    totals = non_bank.get("totals", {}) if isinstance(non_bank.get("totals"), dict) else {}
-    stats = non_bank.get("stats_totals", {}) if isinstance(non_bank.get("stats_totals"), dict) else {}
-    records = non_bank.get("records", []) if isinstance(non_bank.get("records"), list) else []
+    totals = _safe_get(non_bank, "totals", {})
+    stats = _safe_get(non_bank, "stats_totals", {})
+    records = _safe_get(non_bank, "records", [])
     
     # Format MIA counts for conduct count display
     mia_formatted = _format_non_bank_mia(stats)
@@ -496,10 +508,10 @@ def build_knockout_placements(merged: Dict[str, Any]) -> List[KnockoutCellPlacem
     merged_overdraft = (
         _compute_overdraft_compliance(_merge_overdraft_comparisons(sections)) if sections else "N/A"
     )
-    fallback_banking_status = (
-        f"{_within_limit(total_outstanding, total_limit)}, "
-        f"outstanding: {_format_with_commas(total_outstanding)}, "
-        f"limit: {_format_with_commas(total_limit)}"
+    fallback_banking_status = _format_ol_status(
+        _within_limit(total_outstanding, total_limit),
+        total_outstanding,
+        total_limit,
     )
     banking_status_by_section: List[str] = []
     banking_outstanding_by_section: List[Optional[float]] = []
@@ -625,12 +637,123 @@ def set_cra_report_dates(ws: Worksheet, cra_report_date: Optional[str]) -> None:
                 return
 
 
+def write_credit_assessment_sheet(wb: openpyxl.Workbook, assessments: List[Assessment]) -> None:
+    """Add (or replace) a 'Credit Assessment' sheet with structured assessment output."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    SHEET = "Credit Assessment"
+    if SHEET in wb.sheetnames:
+        del wb[SHEET]
+    ws = wb.create_sheet(SHEET)
+
+    BOLD = Font(bold=True)
+    HEADER_FILL = PatternFill("solid", fgColor="1F4E79")
+    HEADER_FONT = Font(bold=True, color="FFFFFF")
+    RED_FILL    = PatternFill("solid", fgColor="C00000")
+    RED_FONT    = Font(bold=True, color="FFFFFF")
+    ORANGE_FILL = PatternFill("solid", fgColor="FF6600")
+    ORANGE_FONT = Font(bold=True, color="FFFFFF")
+    BLUE_FILL   = PatternFill("solid", fgColor="2E75B6")
+    BLUE_FONT   = Font(bold=True, color="FFFFFF")
+    GREEN_FILL  = PatternFill("solid", fgColor="375623")
+    GREEN_FONT  = Font(bold=True, color="FFFFFF")
+
+    def _hdr(row: int, col: int, text: str) -> None:
+        c = ws.cell(row, col, text)
+        c.font = HEADER_FONT
+        c.fill = HEADER_FILL
+        c.alignment = Alignment(wrap_text=True)
+
+    def _label(row: int, col: int, text: str) -> None:
+        c = ws.cell(row, col, text)
+        c.font = BOLD
+
+    def _val(row: int, col: int, text: Any) -> None:
+        ws.cell(row, col, text)
+
+    row = 1
+    for a in assessments:
+        # ── Header banner ──────────────────────────────────────────
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        banner = ws.cell(row, 1, f"AIgent Credit — Assessment Report  |  {a.company_name}  |  Subject {a.si}  |  {a.date}")
+        banner.font = HEADER_FONT
+        banner.fill = HEADER_FILL
+        banner.alignment = Alignment(horizontal="center")
+        row += 1
+
+        # ── Decision summary ───────────────────────────────────────
+        _label(row, 1, "Decision"); _val(row, 2, a.recommendation); row += 1
+        _label(row, 1, "Risk Band"); _val(row, 2, a.risk_band); row += 1
+        _label(row, 1, "Risk Score"); _val(row, 2, f"{a.risk_score} / 100"); row += 1
+        _label(row, 1, "CRA Grade"); _val(row, 2, f"{a.grade}  (i-SCORE: {a.cra_score or 'N/A'})"); row += 1
+        if a.utilization is not None:
+            _label(row, 1, "Credit Utilization")
+            _val(row, 2, f"{a.utilization * 100:.1f}%  (RM {a.total_outstanding:,.0f} outstanding / RM {a.total_limit:,.0f} limit)")
+        else:
+            _label(row, 1, "Credit Utilization"); _val(row, 2, "N/A")
+        row += 1
+        _label(row, 1, "Years in Operation"); _val(row, 2, a.ops_years if a.ops_years is not None else "N/A"); row += 1
+        rec_limit = f"RM {a.limit:,}" if a.recommendation != "DECLINE" else "DECLINE — do not extend credit"
+        _label(row, 1, "Recommended Limit"); _val(row, 2, rec_limit); row += 1
+        row += 1
+
+        # ── Hard declines ──────────────────────────────────────────
+        if a.decline_reasons:
+            _hdr(row, 1, "HARD DECLINE TRIGGERS"); row += 1
+            for reason in a.decline_reasons:
+                c = ws.cell(row, 1, f"✖  {reason}")
+                c.font = Font(bold=True, color="C00000")
+                row += 1
+            row += 1
+
+        # ── Scoring breakdown ──────────────────────────────────────
+        _hdr(row, 1, "Dimension"); _hdr(row, 2, "Score"); _hdr(row, 3, "Notes"); row += 1
+        for d in a.dimensions:
+            _val(row, 1, d.name)
+            _val(row, 2, f"{d.score}/{d.max_score}")
+            _val(row, 3, "; ".join(d.notes))
+            row += 1
+        row += 1
+
+        # ── Early warnings ─────────────────────────────────────────
+        if a.warnings:
+            _hdr(row, 1, "Level"); _hdr(row, 2, "Code"); _hdr(row, 3, "Details"); row += 1
+            level_styles = {
+                "RED_FLAG": (RED_FILL,    RED_FONT),
+                "WARNING":  (ORANGE_FILL, ORANGE_FONT),
+                "WATCH":    (BLUE_FILL,   BLUE_FONT),
+            }
+            for w in a.warnings:
+                fill, font = level_styles.get(w.level, (None, BOLD))
+                c1 = ws.cell(row, 1, w.level)
+                c2 = ws.cell(row, 2, w.code)
+                c3 = ws.cell(row, 3, w.message)
+                c3.alignment = Alignment(wrap_text=True)
+                if fill:
+                    c1.fill = fill; c1.font = font
+                    c2.fill = fill; c2.font = font
+                row += 1
+        else:
+            c = ws.cell(row, 1, "No early warning signals detected.")
+            c.font = Font(color="375623")
+            row += 1
+
+        row += 2  # gap between subjects
+
+    # ── Column widths ──────────────────────────────────────────────
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 22
+    ws.column_dimensions["C"].width = 80
+    ws.column_dimensions["D"].width = 20
+
+
 def fill_knockout_matrix(
     file_path: str,
     issuer_name: str,
     placements: Sequence[KnockoutCellPlacement],
     cra_report_date: Optional[str] = None,
     all_subject_names: Optional[list[str]] = None,
+    assessments: Optional[List[Assessment]] = None,
 ) -> str:
     """Fill the knockout matrix Excel template using explicit cell placements."""
     wb = openpyxl.load_workbook(file_path)
@@ -705,6 +828,11 @@ def fill_knockout_matrix(
     cols_to_color = inserted_subject_cols or subject_cols
     highlighted = apply_column_l_highlighting(ws, cols_to_color)
     print(f"🎨 Column L coloring applied: {highlighted} cell(s) highlighted across {len(cols_to_color)} subject column(s)")
+
+    # Write credit assessment sheet if provided
+    if assessments:
+        write_credit_assessment_sheet(wb, assessments)
+        print(f"📊 Credit Assessment sheet written for {len(assessments)} subject(s)")
 
     # Save output
     output_path = f"{os.path.splitext(file_path)[0]}_FILLED{os.path.splitext(file_path)[1]}"
@@ -822,6 +950,23 @@ def main() -> None:
         
         placements = build_knockout_placements(merged)
 
+        # Run credit assessment for all subjects
+        num_subjects = 1
+        while summary.get(f"Name_Of_Subject_{num_subjects + 1}"):
+            num_subjects += 1
+        print(f"\n🔍 Running credit assessment for {num_subjects} subject(s)...")
+        assessments: List[Assessment] = []
+        for si in range(1, num_subjects + 1):
+            a = assess(merged, si)
+            assessments.append(a)
+            decision_icon = "✅" if a.recommendation == "APPROVE" else ("⚠️" if a.recommendation == "CONDITIONAL APPROVE" else "❌")
+            print(f"  {decision_icon} Subject {si} ({a.company_name}): {a.recommendation}  |  Risk Score {a.risk_score}/100  |  {a.risk_band}")
+            if a.recommendation != "DECLINE":
+                print(f"     Recommended Limit: RM {a.limit:,}")
+            if a.decline_reasons:
+                for r in a.decline_reasons:
+                    print(f"     ✖ {r}")
+
         # Fill Excel
         print(f"\n📝 Filling Excel template: {os.path.basename(excel_file)}")
         output = fill_knockout_matrix(
@@ -830,6 +975,7 @@ def main() -> None:
             placements,
             cra_report_date=summary.get("Last_Updated_By_Experian"),
             all_subject_names=all_subject_names or None,
+            assessments=assessments,
         )
         print(f"\n✅ Success! File saved: {os.path.basename(output)}")
         print(f"📁 Location: {os.path.dirname(os.path.abspath(output))}")

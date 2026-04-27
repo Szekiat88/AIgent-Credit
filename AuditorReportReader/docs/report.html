@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AuditorReportReader — Extraction Accuracy Dashboard</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0 }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f8fafc; color:#1e293b; }
+  .header { background:linear-gradient(135deg,#1e40af,#3b82f6); color:#fff; padding:32px 24px; }
+  .header h1 { font-size:24px; font-weight:700 }
+  .header p  { opacity:.8; font-size:14px; margin-top:4px }
+  .container { max-width:1100px; margin:0 auto; padding:24px }
+  .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin-bottom:24px }
+  .stat-box { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.1); text-align:center }
+  .stat-box .num { font-size:36px; font-weight:700 }
+  .stat-box .lbl { font-size:13px; color:#6b7280; margin-top:4px }
+  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.1); margin-bottom:16px }
+  .section-title { font-size:18px; font-weight:600; margin:24px 0 12px }
+  .field-table { width:100%; border-collapse:collapse; font-size:13px }
+  .field-table th { background:#f1f5f9; padding:8px 10px; text-align:left; font-weight:600 }
+  .field-table td { padding:7px 10px; border-bottom:1px solid #f1f5f9 }
+  .field-table tr:hover td { background:#f8fafc }
+  details summary { outline:none }
+  .legend { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px }
+  .legend span { padding:3px 10px; border-radius:12px; font-size:12px; color:#fff }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>AuditorReportReader — Extraction Accuracy</h1>
+  <p>Training data dashboard &nbsp;·&nbsp; Generated 2026-04-27 17:54:02</p>
+</div>
+
+<div class="container">
+
+  <!-- Summary stats -->
+  <div class="summary-grid" style="margin-top:24px">
+    <div class="stat-box">
+      <div class="num" style="color:#f59e0b">74.1%</div>
+      <div class="lbl">Overall Accuracy</div>
+    </div>
+    <div class="stat-box">
+      <div class="num" style="color:#3b82f6">40/54</div>
+      <div class="lbl">Fields Matched</div>
+    </div>
+    <div class="stat-box">
+      <div class="num">2</div>
+      <div class="lbl">Training Cases</div>
+    </div>
+    <div class="stat-box">
+      <div class="num" style="color:#ef4444">14</div>
+      <div class="lbl">Fields to Fix</div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <span style="background:#22c55e">MATCH</span>
+    <span style="background:#ef4444">MISSING</span>
+    <span style="background:#f97316">WRONG_VALUE</span>
+    <span style="background:#f59e0b">SCALE_x1000</span>
+    <span style="background:#a855f7">SIGN_FLIP</span>
+    <span style="background:#eab308">SCALE_x10/100</span>
+    <span style="background:#6b7280">TYPE_MISMATCH</span>
+  </div>
+
+  <!-- Top failing fields -->
+  
+
+  <!-- Per-case cards -->
+  <div class="section-title">Case-by-Case Results</div>
+  
+    <div class="card" id="case-AIKSIN">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <h2 style="margin:0;font-size:20px">AIKSIN</h2>
+          <span style="color:#6b7280;font-size:13px">manufacturing &nbsp;·&nbsp; Years: — &nbsp;·&nbsp; Run: 20260426_232612</span>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:32px;font-weight:700;color:#ef4444">0.0%</div>
+          <div style="font-size:12px;color:#6b7280">0/0 fields</div>
+        </div>
+      </div>
+      <div style="margin-bottom:8px"><svg width="200" height="12" style="border-radius:6px;overflow:hidden"><rect width="200" height="12" fill="#e5e7eb"/><rect width="0" height="12" fill="#ef4444"/></svg></div>
+      <div style="margin-bottom:12px"><span style="color:#22c55e">✓ All matched</span></div>
+      <details>
+        <summary style="cursor:pointer;color:#3b82f6;font-size:13px">Show field-by-field detail ▾</summary>
+        <div style="overflow-x:auto;margin-top:8px">
+          <table class="field-table">
+            <thead><tr><th>Year</th><th>Field</th><th>Status</th><th>Extracted</th><th>Correct</th></tr></thead>
+            <tbody><tr><td colspan='5' style='color:#6b7280;text-align:center'>No diff data available</td></tr></tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+    
+
+    <div class="card" id="case-Mandrill">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <h2 style="margin:0;font-size:20px">Mandrill</h2>
+          <span style="color:#6b7280;font-size:13px">trading &nbsp;·&nbsp; Years: 2023, 2024 &nbsp;·&nbsp; Run: 20260427_scale_</span>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:32px;font-weight:700;color:#f59e0b">74.1%</div>
+          <div style="font-size:12px;color:#6b7280">40/54 fields</div>
+        </div>
+      </div>
+      <div style="margin-bottom:8px"><svg width="200" height="12" style="border-radius:6px;overflow:hidden"><rect width="200" height="12" fill="#e5e7eb"/><rect width="148" height="12" fill="#f59e0b"/></svg></div>
+      <div style="margin-bottom:12px"><span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-size:12px;margin:2px">MISSING 12</span> <span style="background:#f97316;color:#fff;padding:2px 8px;border-radius:12px;font-size:12px;margin:2px">WRONG_VALUE 2</span></div>
+      <details>
+        <summary style="cursor:pointer;color:#3b82f6;font-size:13px">Show field-by-field detail ▾</summary>
+        <div style="overflow-x:auto;margin-top:8px">
+          <table class="field-table">
+            <thead><tr><th>Year</th><th>Field</th><th>Status</th><th>Extracted</th><th>Correct</th></tr></thead>
+            <tbody><tr><td>2023</td><td>Revenue</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">11320033</td><td style="font-family:monospace">11320033</td></tr>
+<tr><td>2023</td><td>Cost of sales</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">9938733</td><td style="font-family:monospace">9938733</td></tr>
+<tr><td>2023</td><td>Gross Profit</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">1381300</td><td style="font-family:monospace">1381300</td></tr>
+<tr><td>2023</td><td>Staff Cost</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">1074780</td><td style="font-family:monospace">1074780</td></tr>
+<tr><td>2023</td><td>Other Operating Expenses</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">191798</td><td style="font-family:monospace">191798</td></tr>
+<tr><td>2023</td><td>Add : Other Income</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">146400</td><td style="font-family:monospace">146400</td></tr>
+<tr><td>2023</td><td>Interest</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">158458</td><td style="font-family:monospace">158458</td></tr>
+<tr><td>2023</td><td>Net Profit (Loss) for the Year</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">102664</td><td style="font-family:monospace">102664</td></tr>
+<tr><td>2023</td><td>Non Current Asset</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">2599488000</td><td style="font-family:monospace">2599488</td></tr>
+<tr><td>2023</td><td>Current Asset</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">3003481000</td><td style="font-family:monospace">3003481</td></tr>
+<tr><td>2023</td><td>Trade Receivables</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">NOT FOUND</td><td style="font-family:monospace">1479007</td></tr>
+<tr><td>2023</td><td>Other Receivables and Prepayments</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">NOT FOUND</td><td style="font-family:monospace">1450282</td></tr>
+<tr><td>2023</td><td>Amount Due from Directors</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">—</td><td style="font-family:monospace">231021</td></tr>
+<tr><td>2023</td><td>Amount Due from Related Companies</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">—</td><td style="font-family:monospace">1119927</td></tr>
+<tr><td>2023</td><td>Others</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">—</td><td style="font-family:monospace">99334</td></tr>
+<tr><td>2023</td><td>Cash & Cash At Bank</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">74192000</td><td style="font-family:monospace">74192</td></tr>
+<tr><td>2023</td><td>Total Asset</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">5602969000</td><td style="font-family:monospace">5602969</td></tr>
+<tr><td>2023</td><td>Non Current Liabilities</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">2812057000</td><td style="font-family:monospace">2812057</td></tr>
+<tr><td>2023</td><td>Current Liabilities</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">2921630000</td><td style="font-family:monospace">2921630</td></tr>
+<tr><td>2023</td><td>Trade Payables</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">NOT FOUND</td><td style="font-family:monospace">197748</td></tr>
+<tr><td>2023</td><td>Other Payables & Accruals</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">NOT FOUND</td><td style="font-family:monospace">1774472</td></tr>
+<tr><td>2023</td><td>Amount Due to Director</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">—</td><td style="font-family:monospace">1070242</td></tr>
+<tr><td>2023</td><td>Total Liabilities</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">5733687000</td><td style="font-family:monospace">5733687</td></tr>
+<tr><td>2023</td><td>Equity</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">-130718000</td><td style="font-family:monospace">-130718</td></tr>
+<tr><td>2023</td><td>Share Capital</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">100100000</td><td style="font-family:monospace">100100</td></tr>
+<tr><td>2023</td><td>Retained Earning</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">-230818000</td><td style="font-family:monospace">-230818</td></tr>
+<tr><td>2023</td><td>Total Liabilities and Equity</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">5602969000</td><td style="font-family:monospace">5602969</td></tr>
+<tr><td>2024</td><td>Revenue</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">17753708</td><td style="font-family:monospace">17753708</td></tr>
+<tr><td>2024</td><td>Cost of sales</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">12338627</td><td style="font-family:monospace">12338627</td></tr>
+<tr><td>2024</td><td>Gross Profit</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">5415081</td><td style="font-family:monospace">5415081</td></tr>
+<tr><td>2024</td><td>Staff Cost</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">1555734</td><td style="font-family:monospace">1555734</td></tr>
+<tr><td>2024</td><td>Other Operating Expenses</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">12214</td><td style="font-family:monospace">12214</td></tr>
+<tr><td>2024</td><td>Add : Other Income</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">91200</td><td style="font-family:monospace">91200</td></tr>
+<tr><td>2024</td><td>Interest</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">203847</td><td style="font-family:monospace">203847</td></tr>
+<tr><td>2024</td><td>Taxes</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">924773</td><td style="font-family:monospace">924773</td></tr>
+<tr><td>2024</td><td>Net Profit (Loss) for the Year</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">2809713</td><td style="font-family:monospace">2809713</td></tr>
+<tr><td>2024</td><td>Non Current Asset</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">3655613000</td><td style="font-family:monospace">3655613</td></tr>
+<tr><td>2024</td><td>Current Asset</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">4703907000</td><td style="font-family:monospace">4703907</td></tr>
+<tr><td>2024</td><td>Trade Receivables</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">NOT FOUND</td><td style="font-family:monospace">2009356</td></tr>
+<tr><td>2024</td><td>Other Receivables and Prepayments</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">NOT FOUND</td><td style="font-family:monospace">2597653</td></tr>
+<tr><td>2024</td><td>Amount Due from Related Companies</td><td><span style="background:#22c55e;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MATCH</span></td><td style="font-family:monospace">2011252</td><td style="font-family:monospace">2011252</td></tr>
+<tr><td>2024</td><td>Others</td><td><span style="background:#f97316;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">WRONG_VALUE</span></td><td style="font-family:monospace">39982</td><td style="font-family:monospace">586401</td></tr>
+<tr><td>2024</td><td>Cash & Cash At Bank</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">96898000</td><td style="font-family:monospace">96898</td></tr>
+<tr><td>2024</td><td>Total Asset</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">8359520000</td><td style="font-family:monospace">8359520</td></tr>
+<tr><td>2024</td><td>Non Current Liabilities</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">2707151000</td><td style="font-family:monospace">2707151</td></tr>
+<tr><td>2024</td><td>Current Liabilities</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">2973374000</td><td style="font-family:monospace">2973374</td></tr>
+<tr><td>2024</td><td>Trade Payables</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">NOT FOUND</td><td style="font-family:monospace">103613</td></tr>
+<tr><td>2024</td><td>Other Payables & Accruals</td><td><span style="background:#f97316;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">WRONG_VALUE</span></td><td style="font-family:monospace">635954000</td><td style="font-family:monospace">2264925</td></tr>
+<tr><td>2024</td><td>Amount Due to Director</td><td><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">MISSING</span></td><td style="font-family:monospace">—</td><td style="font-family:monospace">813140</td></tr>
+<tr><td>2024</td><td>Total Liabilities</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">5680525000</td><td style="font-family:monospace">5680525</td></tr>
+<tr><td>2024</td><td>Equity</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">2678995000</td><td style="font-family:monospace">2678995</td></tr>
+<tr><td>2024</td><td>Share Capital</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">100100000</td><td style="font-family:monospace">100100</td></tr>
+<tr><td>2024</td><td>Retained Earning</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">2578895000</td><td style="font-family:monospace">2578895</td></tr>
+<tr><td>2024</td><td>Total Liabilities and Equity</td><td><span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px">SCALE_x1000</span></td><td style="font-family:monospace">8359520000</td><td style="font-family:monospace">8359520</td></tr></tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+    
+
+</div>
+</body>
+</html>

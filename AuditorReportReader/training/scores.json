@@ -1,0 +1,22 @@
+{
+  "Mandrill": {
+    "last_run": "20260427_scale_fix",
+    "score_pct": 74.1,
+    "matched": 40,
+    "total": 54,
+    "by_category": {
+      "MATCH": 40,
+      "MISSING": 12,
+      "WRONG_VALUE": 2
+    },
+    "run_dir": "/Users/newuser/Documents/GitHub/AIgent Credit/AuditorReportReader/training/runs/20260426_232611_Mandrill"
+  },
+  "AIKSIN": {
+    "last_run": "20260426_232612",
+    "score_pct": 0.0,
+    "matched": 0,
+    "total": 0,
+    "by_category": {},
+    "run_dir": "/Users/newuser/Documents/GitHub/AIgent Credit/AuditorReportReader/training/runs/20260426_232612_AIKSIN"
+  }
+}

@@ -16,10 +16,7 @@ def extract_int_after_label(label: str, text: str) -> Optional[int]:
       'Credit Applications Pending 3'
     Handles spacing/newlines.
     """
-    label_esc = re.escape(label)
-    pattern = rf"{label_esc}\s*[:\-]?\s*([0-9]+)"
-    v = extract_first(pattern, text)
-    return int(v) if v is not None else None
+    return (extract_int_after_label_all(label, text) or [None])[0]
 
 
 def extract_date_after_label(label: str, text: str) -> Optional[str]:

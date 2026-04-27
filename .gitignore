@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Client data — never commit
+samples/
+samples_output/
+
+# Filled Excel outputs (contain extracted client data)
+*_FILLED.xlsx
+Knockout Matrix Template_FILLED.xlsx
+AuditorReportReader/AIKSIN_filled.xlsx
+AuditorReportReader/Greatocean 2024_filled.xlsx
+AuditorReportReader/ISS_filled.xlsx
+AuditorReportReader/Mandrill2_filled.xlsx
+AuditorReportReader/AIKSIN_sample.xlsx
+AuditorReportReader/Mandrill_Samples.xlsm
+
+# AuditorReportReader — source PDFs (client auditor reports, large files)
+AuditorReportReader/*.pdf
+AuditorReportReader/*.PDF
+AuditorReportReader/training/cases/**/*.pdf
+AuditorReportReader/training/cases/**/*.PDF
+
+# AuditorReportReader — generated caches (can be regenerated with API key)
+AuditorReportReader/.llm_cache/
+AuditorReportReader/.ocr_cache/
+
+# AuditorReportReader — training run output directories (generated)
+AuditorReportReader/training/runs/
+
+# AuditorReportReader — inbox drop zone (transient, not source)
+AuditorReportReader/training/inbox/*
+!AuditorReportReader/training/inbox/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller
+dist/
+build/
+
+# Environment / secrets
+.env
+*.env
+
+# Claude Code local settings — may contain API keys or personal permissions
+**/.claude/settings.local.json
+.claude/settings.local.json

@@ -1,7 +1,7 @@
 import re
 from typing import List, Dict, Any, Optional, Tuple
 
-from pdf_utils import pick_pdf_file, extract_all_sections, RE_DATE
+from pdf_utils import pick_pdf_file, extract_all_sections, RE_DATE, read_pdf_text
 
 RE_TOTAL_LINE = re.compile(r"^\s*TOTAL\s+[\d,]+\.\d{2}\s+TOTAL\s+[\d,]+\.\d{2}\s*$", re.IGNORECASE)
 RE_TOTAL_VALUES = re.compile(r"TOTAL\s+([\d,]+\.\d{2})\s+TOTAL\s+([\d,]+\.\d{2})", re.IGNORECASE)
@@ -28,20 +28,8 @@ def _has_required_markers(pdf_path: str, start_marker: str, end_marker: str) -> 
     Return True only when both start and end markers exist in the PDF text.
     This avoids extracting partial wording when one marker is missing.
     """
-    start_found = False
-    end_found = False
-
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text = (page.extract_text() or "").lower()
-            if not start_found and start_marker.lower() in text:
-                start_found = True
-            if not end_found and end_marker.lower() in text:
-                end_found = True
-            if start_found and end_found:
-                return True
-
-    return False
+    text = read_pdf_text(pdf_path).lower()
+    return start_marker.lower() in text and end_marker.lower() in text
 
 def _month_seq(start_idx: int, direction: int, length: int):
     seq = []
@@ -271,7 +259,8 @@ def extract_non_bank_lender_credit_information(pdf_path: str) -> Dict[str, Any]:
         result["error"] = "Required non-bank lender section markers not found."
         return result
 
-    section_lines = extract_section_lines(pdf_path, START_MARKER, END_MARKER)
+    all_sections = extract_all_sections(pdf_path, START_MARKER, END_MARKER)
+    section_lines = all_sections[0] if all_sections else []
     if not section_lines:
         result["error"] = "Non-bank lender section contains no extractable lines."
         return result
