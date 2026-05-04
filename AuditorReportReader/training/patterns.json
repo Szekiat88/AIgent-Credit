@@ -1,6 +1,238 @@
 {
-  "updated": "2026-04-26T23:26:12.961318",
-  "cases_analysed": 1,
-  "error_totals": {},
-  "fields_ranked": {}
+  "updated": "2026-05-04T13:23:21.719373",
+  "cases_analysed": 28,
+  "error_totals": {
+    "WRONG_VALUE": 349,
+    "MISSING": 141,
+    "SIGN_FLIP": 8
+  },
+  "fields_ranked": {
+    "Other Operating Expenses": {
+      "total_errors": 38,
+      "dominant_error": "MISSING",
+      "breakdown": {
+        "MISSING": 24,
+        "WRONG_VALUE": 14
+      }
+    },
+    "Other Payables & Accruals": {
+      "total_errors": 36,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 31,
+        "MISSING": 5
+      }
+    },
+    "Others": {
+      "total_errors": 35,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "MISSING": 9,
+        "WRONG_VALUE": 26
+      }
+    },
+    "Staff Cost": {
+      "total_errors": 34,
+      "dominant_error": "MISSING",
+      "breakdown": {
+        "MISSING": 18,
+        "WRONG_VALUE": 16
+      }
+    },
+    "Other Receivables and Prepayments": {
+      "total_errors": 34,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "MISSING": 14,
+        "WRONG_VALUE": 20
+      }
+    },
+    "Trade Receivables": {
+      "total_errors": 26,
+      "dominant_error": "MISSING",
+      "breakdown": {
+        "MISSING": 19,
+        "WRONG_VALUE": 7
+      }
+    },
+    "Trade Payables": {
+      "total_errors": 26,
+      "dominant_error": "MISSING",
+      "breakdown": {
+        "MISSING": 18,
+        "WRONG_VALUE": 8
+      }
+    },
+    "Net Profit (Loss) for the Year": {
+      "total_errors": 17,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 16,
+        "SIGN_FLIP": 1
+      }
+    },
+    "Depreciation": {
+      "total_errors": 15,
+      "dominant_error": "MISSING",
+      "breakdown": {
+        "WRONG_VALUE": 7,
+        "MISSING": 8
+      }
+    },
+    "Cost of sales": {
+      "total_errors": 15,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "MISSING": 1,
+        "WRONG_VALUE": 12,
+        "SIGN_FLIP": 2
+      }
+    },
+    "Gross Profit": {
+      "total_errors": 14,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 13,
+        "SIGN_FLIP": 1
+      }
+    },
+    "Total Liabilities": {
+      "total_errors": 14,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 13,
+        "MISSING": 1
+      }
+    },
+    "Interest": {
+      "total_errors": 13,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 11,
+        "SIGN_FLIP": 2
+      }
+    },
+    "Cash & Cash At Bank": {
+      "total_errors": 13,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 13
+      }
+    },
+    "Total Asset": {
+      "total_errors": 13,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 13
+      }
+    },
+    "Retained Earning": {
+      "total_errors": 13,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 13
+      }
+    },
+    "Total Liabilities and Equity": {
+      "total_errors": 13,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 13
+      }
+    },
+    "Current Asset": {
+      "total_errors": 12,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 12
+      }
+    },
+    "Current Liabilities": {
+      "total_errors": 12,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 12
+      }
+    },
+    "Equity": {
+      "total_errors": 12,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 12
+      }
+    },
+    "Revenue": {
+      "total_errors": 11,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 11
+      }
+    },
+    "Non Current Asset": {
+      "total_errors": 11,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 11
+      }
+    },
+    "Non Current Liabilities": {
+      "total_errors": 11,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 11
+      }
+    },
+    "Amount Due from Related Companies": {
+      "total_errors": 11,
+      "dominant_error": "MISSING",
+      "breakdown": {
+        "MISSING": 11
+      }
+    },
+    "Add : Other Income": {
+      "total_errors": 11,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 11
+      }
+    },
+    "Taxes": {
+      "total_errors": 10,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 8,
+        "SIGN_FLIP": 2
+      }
+    },
+    "Amount Due to Director": {
+      "total_errors": 9,
+      "dominant_error": "MISSING",
+      "breakdown": {
+        "WRONG_VALUE": 3,
+        "MISSING": 6
+      }
+    },
+    "Share Capital": {
+      "total_errors": 8,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 8
+      }
+    },
+    "Amount Due from Directors": {
+      "total_errors": 6,
+      "dominant_error": "MISSING",
+      "breakdown": {
+        "MISSING": 6
+      }
+    },
+    "Stock": {
+      "total_errors": 5,
+      "dominant_error": "WRONG_VALUE",
+      "breakdown": {
+        "WRONG_VALUE": 4,
+        "MISSING": 1
+      }
+    }
+  }
 }

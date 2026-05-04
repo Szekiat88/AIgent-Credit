@@ -31,10 +31,20 @@ from pathlib import Path
 from typing import Optional
 
 # Ensure AuditorReportReader modules are importable
-_HERE = Path(__file__).parent.resolve()   # tools/
+_HERE = Path(__file__).parent.resolve()   # checker/
 _ROOT = _HERE.parent                       # AuditorReportReader/
-sys.path.insert(0, str(_HERE))             # diff_checker (tools/ sibling)
-sys.path.insert(0, str(_ROOT))             # core pipeline modules
+_EXTRACTOR = _ROOT / "extractor"           # extractor/ (pipeline + utils live here)
+sys.path.insert(0, str(_HERE))             # diff_checker (checker/ sibling)
+sys.path.insert(0, str(_EXTRACTOR))        # pipeline.* and utils.*
+
+# Auto-load .env from AuditorReportReader root
+_env = _ROOT / ".env"
+if _env.exists():
+    for _line in _env.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 import diff_checker
 
@@ -84,7 +94,8 @@ def _save_patterns(patterns: dict):
 # ---------------------------------------------------------------------------
 
 def cmd_add(pdf_path: str, excel_path: str, name: str,
-            industry: str = "", notes: str = ""):
+            industry: str = "", notes: str = "",
+            pdf_filename: str = "", cawf_filename: str = ""):
     """Register one PDF + correct Excel pair as a training case."""
     _ensure_dirs()
     case_dir = _CASES / name
@@ -100,6 +111,8 @@ def cmd_add(pdf_path: str, excel_path: str, name: str,
         "added":          datetime.now().isoformat(),
         "source_pdf":     pdf_path,
         "source_excel":   excel_path,
+        "pdf_filename":   pdf_filename  or Path(pdf_path).name,
+        "cawf_filename":  cawf_filename or Path(excel_path).name,
     }
     (case_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
     print(f"  [Added] '{name}'  →  {case_dir}")
@@ -128,11 +141,20 @@ def cmd_inbox():
             skipped += 1
             continue
 
-        cmd_add(str(pdf), str(excel), name=stem)
-        # Move processed pair out of inbox
+        # Read sidecar metadata written by sp_to_training.py (if present)
+        sidecar_path = _INBOX / (stem + ".meta.json")
+        sidecar = json.loads(sidecar_path.read_text()) if sidecar_path.exists() else {}
+
+        cmd_add(str(pdf), str(excel), name=stem,
+                pdf_filename=sidecar.get("pdf_filename", ""),
+                cawf_filename=sidecar.get("cawf_filename", ""))
+
+        # Move processed files out of inbox
         proc = _INBOX / "processed"
         shutil.move(str(pdf),   proc / pdf.name)
         shutil.move(str(excel), proc / excel.name)
+        if sidecar_path.exists():
+            shutil.move(str(sidecar_path), proc / sidecar_path.name)
         added += 1
 
     print(f"\n  Inbox done: {added} added, {skipped} skipped.")
@@ -147,11 +169,11 @@ def cmd_inbox():
 def _run_extraction(pdf_path: str, output_path: str,
                     api_key: str, model: str, no_cache: bool = False):
     """Run the full AuditorReportReader pipeline on one PDF."""
-    import json_cache
-    from pdf_ocr import extract_pages, full_text
-    from gemini_extractor import GeminiExtractor
-    from validator import run_checks
-    from excel_filler import write_output
+    from utils import json_cache
+    from pipeline.pdf_ocr import extract_pages, full_text
+    from pipeline.gemini_extractor import GeminiExtractor
+    from pipeline.validator import run_checks
+    from pipeline.excel_filler import write_output
 
     if not _TEMPLATE.exists():
         raise FileNotFoundError(

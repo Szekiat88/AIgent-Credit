@@ -23,6 +23,67 @@ from openpyxl.utils import get_column_letter
 
 _MAIN_SHEET = "Summary of Information"
 
+# Known alternative sheet names (checked case-insensitively before scanning)
+_KNOWN_SHEET_ALIASES = [
+    "summary of information",
+    "summary",
+    "financial summary",
+    "financial statements",
+    "financial statement",
+    "income statement",
+    "profit & loss",
+    "p&l",
+    "pnl",
+]
+
+# Labels that strongly indicate a financial summary sheet (matched in col B)
+_FINANCIAL_SIGNALS = [
+    "revenue", "cost of sales", "gross profit", "net profit",
+    "total asset", "total liab", "equity", "depreciation",
+]
+
+
+def detect_sheet(wb: openpyxl.Workbook) -> str:
+    """
+    Find the sheet in a workbook that contains financial statement data.
+
+    Resolution order:
+    1. Exact match on 'Summary of Information'
+    2. Case-insensitive match on any known alias
+    3. Sheet with the most financial label hits in column B
+    4. First sheet as last resort
+
+    Returns the sheet name (never raises).
+    """
+    sheets = wb.sheetnames
+
+    # 1. Exact match
+    if _MAIN_SHEET in sheets:
+        return _MAIN_SHEET
+
+    # 2. Case-insensitive alias match (preserves first match order)
+    lower_to_actual = {s.lower(): s for s in sheets}
+    for alias in _KNOWN_SHEET_ALIASES:
+        if alias in lower_to_actual:
+            return lower_to_actual[alias]
+
+    # 3. Score every sheet by how many financial labels appear in column B
+    best_name  = sheets[0]
+    best_score = 0
+    for name in sheets:
+        ws    = wb[name]
+        score = 0
+        for row in ws.iter_rows(min_col=2, max_col=2, values_only=True):
+            cell = row[0]
+            if cell:
+                lower = str(cell).lower()
+                score += sum(1 for sig in _FINANCIAL_SIGNALS if sig in lower)
+        if score > best_score:
+            best_score = score
+            best_name  = name
+
+    return best_name
+
 # All fields we check, in order: (col B label in template, short key)
 _FIELDS: List[Tuple[str, str]] = [
     # ── Income Statement ──────────────────────────────────────────────────────
@@ -166,21 +227,36 @@ def _find_year_cols(ws) -> Dict[str, int]:
 # main compare function
 # ---------------------------------------------------------------------------
 
-def compare(filled_path: str, correct_path: str) -> dict:
+def compare(filled_path: str, correct_path: str,
+            filled_sheet: Optional[str] = None,
+            correct_sheet: Optional[str] = None) -> dict:
     """
     Compare filled Excel vs correct sample Excel.
+
+    Sheet names are auto-detected if not supplied — 'Summary of Information'
+    is tried first, then known aliases, then the sheet with the most
+    financial labels in column B.
+
     Returns structured dict with per-field results and summary.
     """
     wb_f = openpyxl.load_workbook(filled_path, data_only=True)
     wb_c = openpyxl.load_workbook(correct_path, data_only=True)
 
-    if _MAIN_SHEET not in wb_f.sheetnames:
-        return {"error": f"'{_MAIN_SHEET}' not found in {filled_path}"}
-    if _MAIN_SHEET not in wb_c.sheetnames:
-        return {"error": f"'{_MAIN_SHEET}' not found in {correct_path}"}
+    sheet_f = filled_sheet  or detect_sheet(wb_f)
+    sheet_c = correct_sheet or detect_sheet(wb_c)
 
-    ws_f = wb_f[_MAIN_SHEET]
-    ws_c = wb_c[_MAIN_SHEET]
+    if sheet_f not in wb_f.sheetnames:
+        return {"error": f"Sheet '{sheet_f}' not found in {filled_path}. "
+                         f"Available: {wb_f.sheetnames}"}
+    if sheet_c not in wb_c.sheetnames:
+        return {"error": f"Sheet '{sheet_c}' not found in {correct_path}. "
+                         f"Available: {wb_c.sheetnames}"}
+
+    if sheet_f != _MAIN_SHEET or sheet_c != _MAIN_SHEET:
+        print(f"    [sheets]   filled='{sheet_f}'  correct='{sheet_c}'")
+
+    ws_f = wb_f[sheet_f]
+    ws_c = wb_c[sheet_c]
 
     years_f = _find_year_cols(ws_f)
     years_c = _find_year_cols(ws_c)
@@ -317,6 +393,22 @@ def print_report(results: dict, case_name: str = ""):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python diff_checker.py <filled.xlsx> <correct.xlsx> [case_name]")
+        print("       python diff_checker.py --detect <excel.xlsx>")
+        sys.exit(1)
+
+    # Quick sheet detection helper
+    if sys.argv[1] == "--detect":
+        if len(sys.argv) < 3:
+            print("Usage: python diff_checker.py --detect <excel.xlsx>")
+            sys.exit(1)
+        wb   = openpyxl.load_workbook(sys.argv[2], data_only=True)
+        name = detect_sheet(wb)
+        print(f"Detected sheet: '{name}'")
+        print(f"All sheets:     {wb.sheetnames}")
+        sys.exit(0)
+
     if len(sys.argv) < 3:
         print("Usage: python diff_checker.py <filled.xlsx> <correct.xlsx> [case_name]")
         sys.exit(1)

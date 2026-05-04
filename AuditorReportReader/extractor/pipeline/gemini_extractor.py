@@ -20,8 +20,8 @@ from typing import Optional
 
 import google.generativeai as genai
 
-import json_cache
-from page_classifier import classify_pages, text_for_sections, section_summary
+from utils import json_cache
+from pipeline.page_classifier import classify_pages, text_for_sections, section_summary
 
 _DEFAULT_MODEL = "gemini-2.5-flash-lite"
 

@@ -4,5 +4,7 @@
   "notes": "December year-end, sign flip on expenses, staff cost not found",
   "added": "2026-04-26T18:46:10.692679",
   "source_pdf": "Mandrill2.pdf",
-  "source_excel": "Mandrill_Samples.xlsm"
+  "source_excel": "Mandrill_Samples.xlsm",
+  "pdf_filename": "Mandrill2.pdf",
+  "cawf_filename": "Mandrill_Samples.xlsm"
 }

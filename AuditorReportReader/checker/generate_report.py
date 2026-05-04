@@ -99,16 +99,20 @@ def build_data() -> dict:
             by_status.setdefault(f["status"], []).append(f)
 
         cases.append({
-            "name":        case_name,
-            "industry":    meta.get("industry", "—"),
-            "score_pct":   sc.get("score_pct", 0),
-            "matched":     sc.get("matched", 0),
-            "total":       sc.get("total", 0),
-            "last_run":    sc.get("last_run", "—"),
-            "by_category": sc.get("by_category", {}),
-            "fields":      fields,
-            "by_status":   by_status,
-            "years":       diff.get("years_compared", []),
+            "name":          case_name,
+            "industry":      meta.get("industry", "—"),
+            "score_pct":     sc.get("score_pct", 0),
+            "matched":       sc.get("matched", 0),
+            "total":         sc.get("total", 0),
+            "last_run":      sc.get("last_run", "—"),
+            "by_category":   sc.get("by_category", {}),
+            "fields":        fields,
+            "by_status":     by_status,
+            "years":         diff.get("years_compared", []),
+            "pdf_filename":  (meta.get("pdf_filename")
+                              or Path(meta.get("source_pdf", "")).name),
+            "cawf_filename": (meta.get("cawf_filename")
+                              or Path(meta.get("source_excel", "")).name),
         })
 
     total_m = sum(c["matched"] for c in cases)
@@ -159,6 +163,28 @@ def _category_pills(by_category: dict) -> str:
     return " ".join(pills) if pills else '<span style="color:#22c55e">✓ All matched</span>'
 
 
+def _file_pills(pdf: str, cawf: str) -> str:
+    """Render labelled file-name pills if filenames are known."""
+    parts = []
+    if pdf:
+        parts.append(
+            f'<span style="display:inline-flex;align-items:center;gap:5px;'
+            f'background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;'
+            f'border-radius:6px;padding:3px 10px;font-size:11px">'
+            f'&#128196;&nbsp;<strong>Auditor PDF:</strong>&nbsp;'
+            f'<span style="font-family:monospace">{pdf}</span></span>'
+        )
+    if cawf:
+        parts.append(
+            f'<span style="display:inline-flex;align-items:center;gap:5px;'
+            f'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;'
+            f'border-radius:6px;padding:3px 10px;font-size:11px">'
+            f'&#9989;&nbsp;<strong>Correct data:</strong>&nbsp;'
+            f'<span style="font-family:monospace">{cawf}</span></span>'
+        )
+    return " ".join(parts)
+
+
 def _case_card(case: dict) -> str:
     pct  = case["score_pct"]
     bar  = _pct_bar(pct)
@@ -168,10 +194,11 @@ def _case_card(case: dict) -> str:
         "<tr><td colspan='5' style='color:#6b7280;text-align:center'>No diff data available</td></tr>"
     )
     years = ", ".join(case["years"]) or "—"
+    file_pills = _file_pills(case.get("pdf_filename", ""), case.get("cawf_filename", ""))
 
     return f"""
     <div class="card" id="case-{case['name']}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div>
           <h2 style="margin:0;font-size:20px">{case['name']}</h2>
           <span style="color:#6b7280;font-size:13px">{case['industry']} &nbsp;·&nbsp; Years: {years} &nbsp;·&nbsp; Run: {case['last_run'][:15] if case['last_run'] != '—' else '—'}</span>
@@ -181,6 +208,7 @@ def _case_card(case: dict) -> str:
           <div style="font-size:12px;color:#6b7280">{case['matched']}/{case['total']} fields</div>
         </div>
       </div>
+      {"<div style='margin-bottom:10px;display:flex;flex-wrap:wrap;gap:6px'>" + file_pills + "</div>" if file_pills else ""}
       <div style="margin-bottom:8px">{bar}</div>
       <div style="margin-bottom:12px">{pills}</div>
       <details>

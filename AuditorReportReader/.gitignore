@@ -1,0 +1,16 @@
+# Secrets — never commit these
+.env
+
+# Caches
+.ocr_cache/
+.llm_cache/
+.sharepoint_token_cache.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Outputs
+output/
+docs/

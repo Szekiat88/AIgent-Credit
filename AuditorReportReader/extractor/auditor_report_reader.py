@@ -16,6 +16,16 @@ Environment:
 import argparse
 import os
 import sys
+from pathlib import Path
+
+# Auto-load .env from AuditorReportReader root (never overrides existing env vars)
+_env = Path(__file__).parent.parent / ".env"
+if _env.exists():
+    for _line in _env.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 
 def _resolve(path: str) -> str:
@@ -84,7 +94,7 @@ def main():
 
     # ── Step 1: OCR ──────────────────────────────────────────────────────────
     print("\n=== STEP 1: OCR ===")
-    from pdf_ocr import extract_pages, full_text
+    from pipeline.pdf_ocr import extract_pages, full_text
     pages = extract_pages(pdf_path, dpi=args.dpi)
     all_text = full_text(pages)
     print(f"  Pages extracted: {len(pages)}")
@@ -107,13 +117,13 @@ def main():
 
     # ── Step 3: Load keyword hints from Excel ─────────────────────────────────
     print("\n=== STEP 3: Load keyword hints ===")
-    from keyword_map import load_user_keyword_map
+    from utils.keyword_map import load_user_keyword_map
     hints = load_user_keyword_map(excel_path)
     print(f"  User-defined hints: {len(hints)} field(s)")
 
     # ── Step 4: LLM extraction via Gemini ────────────────────────────────────
     print("\n=== STEP 4: Gemini LLM extraction ===")
-    import json_cache as jcache
+    from utils import json_cache as jcache
     file_hash = jcache.pdf_hash(pdf_path)
     print(f"  PDF hash: {file_hash[:12]}...")
 
@@ -122,7 +132,7 @@ def main():
         if removed:
             print(f"  Cache cleared ({removed} entries deleted)")
 
-    from gemini_extractor import GeminiExtractor
+    from pipeline.gemini_extractor import GeminiExtractor
     extractor = GeminiExtractor(
         pages=pages,
         target_year=target_year,
@@ -154,7 +164,7 @@ def main():
 
     # ── Step 5: Arithmetic validation ────────────────────────────────────────
     print("\n=== STEP 5: Arithmetic validation ===")
-    from validator import run_checks, print_validation
+    from pipeline.validator import run_checks, print_validation
 
     print(f"  [{target_year}]")
     val_results = run_checks(financial_data)
@@ -188,7 +198,7 @@ def main():
         blacklist_accountant = {"status": "SKIPPED", "query": "", "evidence": []}
         print("  Skipped (--no-web)")
     else:
-        from web_check import check_firm, check_accountant
+        from utils.web_check import check_firm, check_accountant
         print(f"  Checking firm: {audit_checks['firm_name']}")
         blacklist_firm = check_firm(audit_checks["firm_name"])
         print(f"    → {blacklist_firm['status']}")
@@ -198,7 +208,7 @@ def main():
 
     # ── Step 8: Write Excel ───────────────────────────────────────────────────
     print("\n=== STEP 7: Write Excel ===")
-    from excel_filler import write_output
+    from pipeline.excel_filler import write_output
     recommendation = write_output(
         template_path=excel_path,
         output_path=output_path,

@@ -8,7 +8,7 @@ Run with:  python test_pipeline.py
 import sys
 import os
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))  # AuditorReportReader/
+sys.path.insert(0, str(Path(__file__).parent.parent))  # extractor/
 import json
 import tempfile
 import shutil
@@ -142,9 +142,9 @@ class TestPipelineMock(unittest.TestCase):
             _mock_genai.configure = MagicMock()
 
             # Re-import to pick up mock
-            if "gemini_extractor" in sys.modules:
-                del sys.modules["gemini_extractor"]
-            import gemini_extractor as ge
+            if "pipeline.gemini_extractor" in sys.modules:
+                del sys.modules["pipeline.gemini_extractor"]
+            from pipeline import gemini_extractor as ge
 
             extractor = ge.GeminiExtractor(
                 pages=self._make_mock_pages(),
@@ -175,7 +175,7 @@ class TestPipelineMock(unittest.TestCase):
 
     def test_validator_passes_on_good_data(self):
         """Arithmetic checks PASS when BS adds up correctly."""
-        from validator import run_checks
+        from pipeline.validator import run_checks
         # Use the mock BS data (liabilities + equity = total assets within tolerance)
         fin = {}
         mapping = {
@@ -194,7 +194,7 @@ class TestPipelineMock(unittest.TestCase):
 
     def test_page_classifier_detects_sections(self):
         """Page classifier assigns correct types to keyword-rich pages."""
-        from page_classifier import classify_pages
+        from pipeline.page_classifier import classify_pages
         pages = [
             {"page": 1, "text": "independent auditors report we have audited"},
             {"page": 2, "text": "statement of financial position total assets current liabilities"},
@@ -211,7 +211,7 @@ class TestPipelineMock(unittest.TestCase):
 
     def test_json_cache_roundtrip(self):
         """json_cache save/load roundtrip works."""
-        import json_cache
+        from utils import json_cache
         orig_dir = json_cache._CACHE_DIR
         with tempfile.TemporaryDirectory() as tmp:
             json_cache._CACHE_DIR = os.path.join(tmp, ".llm_cache")

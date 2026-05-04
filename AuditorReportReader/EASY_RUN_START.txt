@@ -1,0 +1,16 @@
+                                         
+  Step 1 — Download latest PDFs from SharePoint:                                
+  cd AuditorReportReader
+  python downloader/sp_to_training.py                                           
+                                                            
+  Step 2 — Register any new pairs as training cases:                            
+  python checker/training_manager.py inbox
+                                                                                
+  Step 3 — Run AI extraction + compare against CAWF:                            
+  python checker/training_manager.py run                                        
+                                                                                
+  Step 4 — Save your current accuracy as a snapshot:                            
+  python checker/accuracy_tracker.py snapshot "baseline"                        
+  
+  Step 5 — View the HTML report in browser:                                     
+  python checker/generate_report.py --open    
